@@ -1,3 +1,22 @@
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "dlvilla"
+version = "0.0.0b"
+authors = [
+  { name="Daniel L. Villa", email="dlvilla@sandia.gov" },
+]
+description = "This package simulates salt caverns with hydrogen and other gas mixtures"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Revised BSD with Government copyright",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/sandialabs/uh2sc"
+Issues = "https://github.com/sandialabs/uh2sc/issues"

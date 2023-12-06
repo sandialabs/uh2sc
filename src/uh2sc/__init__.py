@@ -1,7 +1,7 @@
 from .main import main
 
 
-__version__ = '1.1.1'
+__version__ = '0.0.0b'
 
 __copyright__ = """Copyright 2023 National Technology & Engineering 
 Solutions of Sandia, LLC (NTESS). Under the terms of Contract DE-NA0003525 
