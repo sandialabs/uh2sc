@@ -3,20 +3,60 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dlvilla"
-version = "0.0.0b"
+name = "uh2sc"
+version = "0.0.0"
 authors = [
   { name="Daniel L. Villa", email="dlvilla@sandia.gov" },
 ]
+dependencies = [
+     "Cython",
+     "numpy",
+     "scipy",
+     "CoolProp",
+     "cerberus",
+     "pandas",
+     "pyyaml",
+]
+
 description = "This package simulates salt caverns with hydrogen and other gas mixtures"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">3.8"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: Revised BSD with Government copyright",
+    "License :: OSI Approved :: BSD License",
     "Operating System :: OS Independent",
+]
+[project.optional-dependencies]
+test = [
+  "pytest",
+  "matplotlib",
+  "py-pde"
+]
+docs = [
+  "sphinx"
 ]
 
 [project.urls]
 Homepage = "https://github.com/sandialabs/uh2sc"
 Issues = "https://github.com/sandialabs/uh2sc/issues"
+
+[tool.pylint.messages_control]
+disable = [
+  "missing-module-docstring",
+  "missing-class-docstring",
+  "missing-function-docstring",
+  "too-many-instance-attributes",
+  "too-many-return-statements",
+  "too-few-public-methods",
+  "too-many-branches",
+  "too-many-arguments",
+  "too-many-statements",
+  "too-many-locals",
+  "import-error",
+  "duplicate-code",
+  "no-name-in-module"
+]
+
+[tool.setuptools.dynamic]
+readme = {file = ["README.md"]}
+version = {attr = "uh2sc.__init__.__version__"}

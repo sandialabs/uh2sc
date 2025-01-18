@@ -1,0 +1,31 @@
+ideal_pipes:
+  required: false
+  type: boolean
+pipe_diameters:
+  check_with: is_increasinglist
+  required: true
+  type: list
+pipe_lengths:
+  check_with: check_pipe_lengths
+  required: true
+  type: list
+pipe_roughness_ratios:
+  check_with: check_pipe_roughness
+  required: true
+  type: list
+pipe_thermal_conductivities:
+  check_with: check_pipe_conductivities
+  required: true
+  type: list
+pipe_total_minor_loss_coefficients:
+  check_with: check_pipe_minor_loss_coef
+  required: false
+  type: list
+valves:
+  required: true
+  type: dict
+control_volume_length: 
+  required: true
+  type: number
+  min: 1
+  max: 1000000

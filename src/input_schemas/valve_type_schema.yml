@@ -1,0 +1,133 @@
+control_valve:
+  Cv:
+    min: 0
+    required: true
+    type: number
+  characteristic:
+    allowed:
+    - linear
+    - eq
+    - fast
+    type: string
+  time_constant:
+    min: 0
+    type: number
+  type:
+    allowed:
+    - controlvalve
+    required: true
+    type: string
+  reservoir:
+    allow_unknown: false
+    required: true
+    schema:
+      pressure:
+        max: 100000000.0
+        min: 0.0
+        required: true
+        type: number
+      temperature:
+        max: 500
+        min: 0.0
+        required: true
+        type: number
+      fluid: 
+        required: true
+        type: string
+        check_with: fluid_string_check
+    type: dict
+mdot:
+  mdot:
+    required: true
+    type:
+    - number
+    - list
+  time:
+    required: true
+    type:
+    - number
+    - list
+  type:
+    allowed:
+    - mdot
+    required: true
+    type: string
+  reservoir:
+    allow_unknown: false
+    required: true
+    schema:
+      pressure:
+        max: 100000000.0
+        min: 0.0
+        required: true
+        type: number
+      temperature:
+        max: 500
+        min: 0.0
+        required: true
+        type: number
+      fluid: 
+        required: true
+        type: string
+        check_with: fluid_string_check
+    type: dict
+orifice:
+  diameter:
+    min: 0
+    required: true
+    type: number
+  discharge_coef:
+    min: 0
+    required: true
+    type: number
+  type:
+    allowed:
+    - orifice
+    required: true
+    type: string
+  reservoir:
+    allow_unknown: false
+    required: true
+    schema:
+      pressure:
+        max: 100000000.0
+        min: 0.0
+        required: true
+        type: number
+      temperature:
+        max: 500
+        min: 0.0
+        required: true
+        type: number
+      fluid: 
+        required: true
+        type: string
+        check_with: fluid_string_check
+    type: dict
+psv:
+  back_pressure:
+    min: 0
+    required: true
+    type: number
+  blowdown:
+    max: 1
+    min: 0
+    required: true
+    type: number
+  diameter:
+    min: 0
+    required: true
+    type: number
+  discharge_coef:
+    min: 0
+    required: true
+    type: number
+  set_pressure:
+    min: 0
+    required: true
+    type: number
+  type:
+    allowed:
+    - psv
+    required: true
+    type: string

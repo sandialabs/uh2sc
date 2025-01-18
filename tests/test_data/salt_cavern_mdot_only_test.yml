@@ -1,0 +1,58 @@
+cavern:
+  depth: 1000.0 # meters
+  overburden_pressure: 30000000.0 # Pascal:  Approximately 1000 m deep overburden pressure
+  height: 200.0 # meters
+  diameter: 100.0 # meters
+  salt_thickness: 100.0 # The "vessel" is now a layer of salt that is modeled  
+  salt_heat_capacity: 880.0 #J/kg/K salt heat capacity
+  salt_density: 2200.0 # kg/m3 salt density 
+  salt_thermal_conductivity: 4.5 # W/m/K see https://doi.org/10.1016/j.renene.2021.11.080 for examples this is for 100 C
+  salt_farfield_temperature: 323 # Kelvin
+  distance_to_farfield_temp: 600.0 # meters
+wells:  # an arbitrary number of wells can be defined that can pull and push different gasses into the well simultaneously
+        # each well can have multiple pipes such that a single well can inject and withdraw at the same time.
+  cavern_well:
+    ideal_pipes: false
+    control_volume_length: 10
+    pipe_lengths: [1000] # meters must be 
+    pipe_diameters: [0.0,0.0,0.1,0.12] # meters
+    pipe_thermal_conductivities: [45] # W/m/K
+    pipe_roughness_ratios: [0.001]  # ratio of pipe diameter to roughness height
+    pipe_total_minor_loss_coefficients: [0.0]
+    valves: # must have same number of valves as pipe_lengths (every pipe ends in a valve)
+      inflow_mdot:
+        type: "mdot"
+        time: [0.0, 2628000.0]
+        mdot: [13.0196,13.0196]    # positive indicates filling the cavern, negative indicates discharging from the cavern
+        reservoir:
+          pressure: 8000000.0
+          temperature: 273.15
+          fluid: "H2"
+  relief_well:
+    control_volume_length: 10
+    pipe_lengths: [1000] # meters must be 
+    pipe_diameters: [0.0,0.0,0.1,0.12] # meters set of four for first pipe: [min outer diameter, min inner diameter, max inner diameter, max outer diameter]
+                                       # all other pipes have three entries where the previous max outer diameter is the nex min outer diameter.
+    pipe_thermal_conductivities: [45] # W/m/K
+    pipe_roughness_ratios: [0.001]  # ratio of pipe diameter to roughness height
+    pipe_total_minor_loss_coefficients: [0.0]
+    valves:
+      inflow_mdot:
+        type: "mdot"
+        time: [0.0, 2628000.0]
+        mdot: [-1.0196,-1.0196]    # positive indicates filling the cavern, negative indicates discharging from the cavern
+        reservoir:
+          pressure: 8000000.0
+          temperature: 273.15
+          fluid: "H2"
+initial:
+  temperature: 323.0
+  pressure: 9000000.0 #Pascal
+  fluid: "H2" 
+  start_date: "2023-01-01" # Must be in iso format "YYYY-MM-DD"
+calculation:
+  time_step: 450.0 # seconds 
+  end_time: 2628000.0 # seconds for completion of the first step
+heat_transfer:
+  number_radial_elements: 300 # for 1-D radial heat transfer
+  h_inner: "calc" # can enter a constant value if needed.

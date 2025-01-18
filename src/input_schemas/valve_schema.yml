@@ -1,0 +1,64 @@
+Cv:
+  min: 0
+  type: number
+back_pressure:
+  min: 0
+  type: number
+blowdown:
+  max: 1
+  min: 0
+  type: number
+characteristic:
+  allowed:
+  - linear
+  - eq
+  - fast
+  type: string
+diameter:
+  min: 0
+  type: number
+discharge_coef:
+  min: 0
+  type: number
+end_pressure:
+  min: 0
+  type: number
+mdot:
+  type:
+  - number
+  - list
+set_pressure:
+  min: 0
+  type: number
+time:
+  type: list
+time_constant:
+  min: 0
+  type: number
+type:
+  allowed:
+  - psv
+  - orifice
+  - controlvalve
+  - mdot
+  required: true
+  type: string
+reservoir:
+  allow_unknown: false
+  required: false
+  schema:
+    pressure:
+      max: 100000000.0
+      min: 0.0
+      required: true
+      type: number
+    temperature:
+      max: 500
+      min: 0.0
+      required: true
+      type: number
+    fluid:
+      required: true
+      type: string
+      check_with: fluid_string_check
+  type: dict
