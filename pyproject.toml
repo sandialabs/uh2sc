@@ -16,6 +16,7 @@ dependencies = [
      "cerberus",
      "pandas",
      "pyyaml",
+     "rich-click"
 ]
 
 description = "This package simulates salt caverns with hydrogen and other gas mixtures"
@@ -23,7 +24,7 @@ readme = "README.md"
 requires-python = ">3.8"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: BSD License",
+    "License :: OSI Approved :: Revised BSD License",
     "Operating System :: OS Independent",
 ]
 [project.optional-dependencies]
@@ -35,6 +36,9 @@ test = [
 docs = [
   "sphinx"
 ]
+
+[project.scripts]
+uh2sc = "main:main"
 
 [project.urls]
 Homepage = "https://github.com/sandialabs/uh2sc"

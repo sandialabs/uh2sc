@@ -261,7 +261,8 @@ class Test_SaltCavern_Verification(unittest.TestCase):
             
             study_input = self.nielson_obj.study_input
             inp = self.nielson_obj.inp
-            inpc = self.nielson_obj.inpc
+            # inpc is no longer used.
+            #inpc = self.nielson_obj.inpc
             
             inp_path = os.path.join(os.path.dirname(__file__),"test_data","nielson_verification.yml")
             
