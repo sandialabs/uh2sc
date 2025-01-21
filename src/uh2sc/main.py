@@ -14,13 +14,13 @@ from uh2sc import SaltCavern
               "--input_file",default="input.yml", help="A file path to a valid "
               +"UH2SC input file (in the repo see: ./uh2sc/input_schemas/ for the" 
               +" schema and ./uh2sc/tests/test_data/... for examples that work)")
+def cli(input_file):
+    main(input_file)
+
+
 def main(input_file):
     with open(input_file,'r',encoding='utf-8') as infile:
         inp = yaml.load(infile, Loader=yaml.FullLoader)
 
     sc = SaltCavern(inp)
     sc.run(disable_pbar=False) 
-
-
-if __name__ == "__main__":
-    main()

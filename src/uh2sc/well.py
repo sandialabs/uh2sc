@@ -16,8 +16,6 @@ class Well(object):
     def __init__(self,well_dict,P0,T0,molefracs,comp):
         
         """
-        
-        
         CP - cool props object
         """
         self.input = well_dict
@@ -110,7 +108,7 @@ class Well(object):
                pipe.P_fluid[-1] = P_cavern
         else:
             for pname, pipe in self.pipes.items():
-                pipe.step(cavern_obj,self,wname,i)
+                pipe.step(cavern_obj,wname,i)
         
         
     

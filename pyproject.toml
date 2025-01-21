@@ -38,7 +38,7 @@ docs = [
 ]
 
 [project.scripts]
-uh2sc = "main:main"
+uh2sc = "uh2sc.main:cli"
 
 [project.urls]
 Homepage = "https://github.com/sandialabs/uh2sc"
