@@ -2,7 +2,7 @@
 # Copyright (c) 2021 Anders Andreasen
 # Published under an MIT license
 
-# pylint: disable=invalid-name
+# pylint: disable=invalid-name,c-extension-no-member
 
 import unittest
 import os
@@ -23,7 +23,7 @@ from uh2sc import validator
 def get_example_input(fname):
 
     fname = os.path.join(os.path.abspath(os.path.dirname(__file__)),"..","examples",fname)
-    with open(fname) as infile:
+    with open(fname,'r',encoding='utf-8') as infile:
         input_ = yaml.load(infile, Loader=yaml.FullLoader)
 
     return input_
@@ -98,7 +98,6 @@ class TestBasics(unittest.TestCase):
         assert tp.relief_valve(
             P1, Pback, Pset, blowdown, gamma, CD, T1, Z, MW, area
         ) == 0
-        psv_state = "closed"
         assert tp.relief_valve(
             P1*1.01, Pback, Pset, blowdown, gamma, CD, T1, Z, MW, area
         ) == 0
@@ -160,7 +159,7 @@ class TestBasics(unittest.TestCase):
 
     def test_hinner_mixed(self):
         # Value changed from 7 to 7.6 because of annular mode of heat transport.
-        # A more 
+        # A more
         mdot = 1e-10
         D = 0.010
         fluid = CP.AbstractState("HEOS","Air")
@@ -219,4 +218,3 @@ if __name__ == "__main__":
 
         with open('testall_test_profile.txt', 'w+', encoding='utf-8') as f:
             f.write(s.getvalue())
-

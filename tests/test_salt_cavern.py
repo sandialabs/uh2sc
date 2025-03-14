@@ -4,60 +4,54 @@ Created on Thu Oct 19 12:21:12 2023
 
 @author: dlvilla
 """
-
-import unittest
-from uh2sc import SaltCavern
 import os
+import unittest
+from matplotlib import pyplot as plt
+from uh2sc import SaltCavern
 
-class Test_SaltCavern(unittest.TestCase):
+class TestSaltCavern(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.plot_results = False
-        
-    
+
+
     @classmethod
     def tearDownClass(cls):
         pass
-    
-    @unittest.skip("The pressure relief valve type psv must be" 
-                 +"added again to uh2sc so that the current case can run. This case must" 
-                 +"be fixed and is the first verification case that will be used to" 
-                 +"show that the Well class with a single double vertical pipe combination (1 active one inactive)" 
+
+    @unittest.skip("The pressure relief valve type psv must be"
+                 +"added again to uh2sc so that the current case can run. This case must"
+                 +"be fixed and is the first verification case that will be used to"
+                 +"show that the Well class with a single double vertical"
+                 +" pipe combination (1 active one inactive)"
                  +"is working")
     def test_salt_cavern(self):
         """
-        Perform a single cycle 
+        Perform a single cycle
         """
 
         inp = os.path.join(os.path.dirname(__file__),"test_data","salt_cavern_test.yml")
 
         sc = SaltCavern(inp)
-        """
-        RUN
-        
-        """
-        Tvessel = sc.T_cavern
-        Tfluid = sc.T_cavern
 
-        Tvessel, Tfluid = sc.step()
-        
-  
-        for i in range(1):
-    
+        _temp_vessel, _temp_fluid = sc.step()
+
+
+        for _i in range(1):
+
             new_inp = sc.input
             new_inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["mdot"] = [-13.0196,-13.0196]
-            
+
             sc.input = new_inp
             sc.validate_input()
 
-            Tvessel, Tfluid  = sc.step()
+            _temp_vessel, _temp_fluid  = sc.step()
             new_inp = sc.input
             new_inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["mdot"] = [13.0196,13.0196]
-            
-            Tvessel, Tfluid = sc.step()
-        
+
+            _temp_vessel, _temp_fluid = sc.step()
+
         if self.plot_results:
-            from matplotlib import pyplot as plt
             plt.plot(sc.cavern_results['Time (s)'],sc.cavern_results['Gas temperature (K)'])
             plt.grid("on")
             plt.xlabel("Time (s)")
@@ -65,31 +59,31 @@ class Test_SaltCavern(unittest.TestCase):
 
         self.assertTrue(sc.T_cavern[-1] > 380.0 and sc.T_cavern[-1] < 381.0 )
         self.assertTrue(sc.P_cavern[-1] > 57000000.0 and sc.P_cavern[-1] < 58000000.0)
-        minP = sc.P_cavern.min()
-        minT = sc.T_cavern.min()
-        self.assertTrue(minP > 7400000 and minP < 7410000)
-        self.assertTrue(minT > 266.0 and minT < 267.0)
-        
+        min_pressure = sc.P_cavern.min()
+        min_temperature = sc.T_cavern.min()
+        self.assertTrue(min_pressure > 7400000 and min_pressure < 7410000)
+        self.assertTrue(min_temperature > 266.0 and min_temperature < 267.0)
+
 
 if __name__ == "__main__":
-    profile = False
-    
-    if profile:
+    PROFILE = False
+
+    if PROFILE:
         import cProfile
         import pstats
         import io
-        
+
         pr = cProfile.Profile()
         pr.enable()
-        
-    o = unittest.main(Test_SaltCavern())
-    
-    if profile:
+
+    o = unittest.main(TestSaltCavern())
+
+    if PROFILE:
 
         pr.disable()
         s = io.StringIO()
         ps = pstats.Stats(pr, stream=s).sort_stats('tottime')
         ps.print_stats()
-        
-        with open('utilities_test_profile.txt', 'w+') as f:
-            f.write(s.getvalue())            
+
+        with open('utilities_test_profile.txt', 'w+', encoding='utf-8') as f:
+            f.write(s.getvalue())
