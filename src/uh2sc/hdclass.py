@@ -18,7 +18,7 @@ from uh2sc.abstract import AbstractComponent
 class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
 
     def __init__(self,r_inner,kg,rhog,cpg,length_component,number_element,dist_next_cavern_wall,Tg,
-                 dist_to_Tg_reservoir,dt0,bc,Tgvec0=None):
+                 dist_to_Tg_reservoir,dt0,bc,adj_comp,global_indices,Tgvec0=None):
         """
         Inputs: (all are float or int)
         -------
@@ -39,6 +39,12 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
                                    flux into (Q0) and out of (Qend) the GHE. The value
                                    for Qend is often = 0.0 while Q0 is a variable of
                                    the component that the GHE is connected to.
+            adj_comp             = The adjacent component (either a well or the cavern)
+                                   input values.
+            global_indices       = tuple, first is the index (for the global xg vector)
+                                   that this component starts at and the second is the
+                                   last value (+1 for zero indexing) that this component
+                                   uses in the global x vector
             Tgvec0               = Initial condition temperatures. If not provided,
                                    then the entire ground is assumed to be at Tg.
 
@@ -64,11 +70,15 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
 
         self.bc = bc
 
+        self._gindices = global_indices
+
         # initial conditions
         if Tgvec0 is None:
             self.Tgvec_m1 = Tg * np.ones(number_element+1)
+            self.Tgvec = self.Tgvec_m1
         else:
             self.Tgvec_m1 = Tgvec0
+            self.Tgvec = Tgvec0
 
         # Space finite volume elements on a log scale to allow a smooth capture of the
         # surface temperature gradient.
@@ -105,7 +115,9 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
             return self.bc["Qend"] # zero flux boundary condition
         else:
             return (-Tgvec[idx+1] + Tgvec[idx])/self.Rg[idx]
-
+    @property
+    def global_indices(self):
+        return self._gindices
 
     def evaluate_residuals(self,xg):
         """

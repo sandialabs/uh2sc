@@ -9,6 +9,11 @@ class AbstractComponent(ABC):
 
     Components are: 1, SaltCavern, Well,
     """
+    @property
+    @abstractmethod
+    def global_indices(self):
+        pass
+
     @abstractmethod
     def evaluate_residuals(self,xg):
         """_summary_

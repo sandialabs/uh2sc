@@ -78,30 +78,17 @@ class TestGHE(unittest.TestCase):
         inp["initial_conditions"]["Qend"] = 0.0
         inp["number_elements"] = 150
 
-        model = Model(inp)
+        ghe_inp = {}
+        ghe_inp["ghes"] = {}
+        ghe_inp["ghes"]["ghe_test"] = inp
 
+        model = Model(ghe_inp,single_component_test=True,
+                       dt=t_step,end_time=t_end,type="ghe",
+                       inner_radius=r_cavern,Q0=q_in_cavern,Qend=0.0,
+                       height=h_cavern)
 
+        model.run()
 
-
-
-
-
-
-        axsym = ImplicitEulerAxisymmetricRadialHeatTransfer(r_cavern,
-                  kg,
-                  rhog,
-                  cpg,
-                  h_cavern,
-                  number_element,
-                  dist_next_cavern,
-                  t_g,
-                  dist_to_tg_reservoir,
-                  bc=bc_cavern,
-                  dt0=t_step)
-
-        for _step in range(int(t_end/t_step)):
-
-            axsym.step(dt=t_step, Qsalt0=q_in_cavern)
 
         comparison_data = self.comparable_solution_by_different_method(alpha, q_in, kg, t_end,
                                                     r1=r_cavern,

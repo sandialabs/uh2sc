@@ -2,12 +2,14 @@
 
 
 from warnings import warn
+import numpy as np
 
 from uh2sc import validator
 from uh2sc.errors import InputFileError
 from uh2sc.solvers import NewtonSolver
+from uh2sc.hdclass import ImplicitEulerAxisymmetricRadialHeatTransfer
 
-
+ADJ_COMP_TESTING_NAME = "testing"
 
 class Model(object):
 
@@ -28,7 +30,8 @@ class Model(object):
 
         """
 
-        self.input = self._read_input(inp)
+        self.inputs = self._read_input(inp)
+        self.test_inputs = kwargs
 
         if not single_component_test:
             if len(kwargs) != 0:
@@ -36,8 +39,8 @@ class Model(object):
                                 +" testing! Do not call Model with kwargs!")
             self._validate()
             num_caverns = 1
-            num_ghes = len(self.input["ghes"])
-            num_wells = len(self.input["wells"])
+            num_ghes = len(self.inputs["ghes"])
+            num_wells = len(self.inputs["wells"])
         else:
             num_caverns = 0
             num_ghes = 0
@@ -53,13 +56,41 @@ class Model(object):
             else:
                 raise ValueError("Only valid kwargs['type']: ghe, cavern, well")
 
+
         self._build(num_caverns,num_wells,num_ghes)
+
+        self.solver = NewtonSolver()
+
+        time_step = self.inputs["calculation"]["time_step"]
+        nstep = int(self.inputs["calculation"]["end_time"]
+                    / time_step
+                    + 1)
+        # constant time steps
+        self.times = [idx * time_step for idx in range(nstep)]
 
 
     def run(self):
-        pass
+        for _time in self.times:
+            self.solver.solve(self)
 
-    def _build(self,inp,num_caverns,num_wells,num_ghes):
+    def get_x(self):
+        xg = self.xg
+        for cname, component in self.components.items():
+            bind, eind = component.global_indices
+            xg[bind:eind] = component.get_x()
+
+    def evaluate_residuals(self):
+        residuals = []
+        for cname, component in self.components.items():
+            residuals += component.evaluate_residual(self.xg)
+
+
+    def load_var_values_from_x(self, xg_new):
+        for cname, component in self.components.items():
+            component.load_var_values_from_x(xg_new)
+
+
+    def _build(self,num_caverns,num_wells,num_ghes):
         """
         Assemble the order of the global variable vector the ordering is as follows:
 
@@ -103,48 +134,115 @@ class Model(object):
                           .
                           .              Temperature element n
 
-
-
-
-
         """
+
         xg_descriptions = []
+        xg = []
         num_var = {}
+        components = {}
         if num_caverns != 0:
-            self._build_cavern(xg_descriptions)
+            self._build_cavern(xg_descriptions,xg,components)
             num_var["caverns"] = len(xg_descriptions)
         else:
             num_var["caverns"] = 0
         if num_wells != 0:
-            self._build_wells(xg_descriptions)
+            self._build_wells(xg_descriptions,xg,components)
             num_var["wells"] = (len(xg_descriptions)
                                              - num_var["caverns"])
         else:
             num_var["wells"] = 0
 
         if num_ghes != 0:
-            self._build_ghes(xg_descriptions)
+            self._build_ghes(xg_descriptions,xg,components)
             num_var["ghes"] = (len(xg_descriptions)
                                              - num_var["caverns"]
                                              - num_var["wells"])
         else:
             num_var["ghes"] = 0
 
+        self.xg = np.array(xg)
+        self.components = components
 
 
 
 
 
-    def _build_ghes(self):
+    def _build_ghes(self,x_desc,xg,components):
+        """
+        Build all GHE's and link them to the
+        specified well or the cavern
+
+        Args:
+            x_desc list: _description_
+            xg list: _description_
+            components (_type_): _description_
+        """
 
         ghes = self.inputs["ghes"]
 
+        for name,ghe in ghes.items():
+            if len(self.test_inputs) != 0:
+                # This is testing mode and you have to add stuff that
+                # would normally come from the main ("schema_general.yml") schema.
+                t_step = self.test_inputs["dt"]
+                height = self.test_inputs["height"]
+                inner_radius = self.test_inputs["inner_radius"]
+                adjacent_comp = {}
+                adjcomp_name = ADJ_COMP_TESTING_NAME
+                # backfit missing stuff to get the solution to work.
+                self.inputs["calculation"] = {}
+                self.inputs["calculation"]["end_time"] = self.test_inputs["end_time"]
+                self.inputs["calculation"]["time_step"] = self.test_inputs["dt"]
+            else:
+                # the component adjacent to this GHE!
+                adjcomp_name, adjacent_comp = self._find_ghe(name)
+                if "pipe_diameters" in adjacent_comp:
+                    inner_radius = adjacent_comp["pipe_diameters"][-1]/2
+                    height = adjacent_comp["pipe_lengths"]
+                else:
+                    inner_radius = adjacent_comp["diameter"]/2
+                    height = adjacent_comp["height"]
+                t_step = self.inputs["calculations"]["time_step"]
 
-    def _build_cavern(self):
+            # modifies the adjacent component's inputs so that
+            # we can permanently find the common variable between
+            # these.
+            adjacent_comp["temp_continuity_idx"] = len(xg)
+            adjacent_comp["name"] = adjcomp_name
+
+
+            beg_idx = len(xg)
+
+            xg += [ghe["farfield_temperature"] for _idx in range(ghe["number_elements"])]
+            x_desc += [f"GHE name `{name}` element {idx} outer temperature "
+                       +"(inner temperature element {idx-1})"
+                       for idx in range(ghe["number_elements"])]
+
+            end_idx = len(xg)
+
+            components[name] = ImplicitEulerAxisymmetricRadialHeatTransfer(inner_radius,
+                  ghe["thermal_conductivity"],
+                  ghe["density"],
+                  ghe["heat_capacity"],
+                  height,
+                  ghe["number_elements"],
+                  ghe["modeled_radial_thickness"],
+                  ghe["farfield_temperature"],
+                  ghe["distance_to_farfield_temp"],
+                  bc=ghe["initial_conditions"],
+                  dt0=t_step,
+                  adj_comp=adjacent_comp,
+                  global_indices=(beg_idx,end_idx))
+
+
+
+    def _build_cavern(self,x_desc,xg,components):
         pass
 
-    def _build_wells(self):
+    def _build_wells(self,x_desc,xg,components):
         pass
+
+
 
     def _validate(self):
         """
@@ -174,7 +272,7 @@ class Model(object):
         if invalid:
             raise InputFileError("Error in input file:\n\n" + error_string)
 
-    def _read_input(inp):
+    def _read_input(self,inp):
             # enable reading a file or accepting a valid dictionary
         if isinstance(inp,str):
             with open(inp,'r',encoding='utf-8') as infile:
@@ -186,3 +284,15 @@ class Model(object):
                             "gives a path to a uh2sc yaml input file or must"+
                             " be a dictionary with the proper format for uh2sc.")
         return input_dict
+
+    def _find_ghe(self,ghe_name):
+        for wname, well in self.inputs["wells"].items():
+            if well["ghe_name"] == ghe_name:
+                return wname,well
+        if ghe_name == self.inputs["cavern"]["ghe_name"]:
+            return "cavern",cavern
+        else:
+            raise ValueError("The name `{ghe_name}` is not referenced by any"
+                        +" well or the cavern, it is isolated and must be included"
+                        +" in a `ghe_name` field for the cavern or a well in the "
+                        +"input file!")

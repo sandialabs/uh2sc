@@ -1,6 +1,3 @@
-name:
-  required: true
-  type: string
 distance_to_farfield_temp:
   max: 100000
   min: 0.0
