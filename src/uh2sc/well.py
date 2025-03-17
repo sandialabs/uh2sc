@@ -9,7 +9,7 @@ import numpy as np
 from CoolProp import CoolProp as CP
 from uh2sc.constants import Constants as const
 from uh2sc.transport import annular_nusselt, circular_nusselt
-from uh2sc.hdclass import ExplicitAxisymmetricRadialHeatTransfer
+#from uh2sc.hdclass import ImplicitEulerAxisymmetricRadialHeatTransfer
 
 
 class Well(object):
@@ -728,7 +728,7 @@ class VerticalPipe(object):
             Nu, h_in = annular_nusselt(mdot, _L_, Di, Do, Tb, Tw, True, fluid)
             Nu, h_out = annular_nusselt(mdot, _L_, Di, Do, Tb, Tw, False, fluid)
 
-            q_out =
+            q_out = 0
 
 
             # heat transfer bi-directional (in and out)
@@ -809,23 +809,3 @@ class PipeMaterial(object):
         self.relative_rougness = surface_roughness_height_ratio
 
         pass
-
-def process_CP_gas_string(matstr):
-    # Detects if a multi component fluid is specified using & for separation of components
-    if "&" in matstr:
-        comp_frac_pair = [str.replace("["," ").replace("]","").split(" ") for str in  matstr.split("&")]
-        comp0 = [pair[0] for pair in comp_frac_pair]
-        compSRK0 = [pair[0]+"-SRK" for pair in comp_frac_pair]
-        molefracs0 = np.asarray([float(pair[1]) for pair in comp_frac_pair])
-        molefracs = molefracs0 / sum(molefracs0)
-
-        sep = "&"
-        comp = sep.join(comp0)
-        compSRK = sep.join(compSRK0)
-    # Normally single component fluid is specified
-    else:
-        comp = matstr
-        molefracs = [1.0]
-        compSRK = matstr
-
-    return comp, molefracs, compSRK

@@ -9,18 +9,16 @@ from scipy.optimize import minimize
 from CoolProp.CoolProp import PropsSI
 import CoolProp.CoolProp as CP
 from uh2sc import transport as tp
-from uh2sc import validator
-#from uh2sc.well import Well
-from uh2sc.well import process_CP_gas_string
+
 from uh2sc.errors import NumericAnomaly,MassTooLow,InputFileError
 from uh2sc.constants import Constants
-from uh2sc.utilities import filter_cpu_count
+from uh2sc.utilities import filter_cpu_count, process_CP_gas_string
 from uh2sc.abstract import AbstractComponent
 
 class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
 
-    def __init__(self,r_inner,kg,rhog,cpg,length_component,number_element,dist_nexT_cavern_wall,Tg,
-                 dist_to_Tg_reservoir,Tgvec0=None,bc=None):
+    def __init__(self,r_inner,kg,rhog,cpg,length_component,number_element,dist_next_cavern_wall,Tg,
+                 dist_to_Tg_reservoir,dt0,bc,Tgvec0=None):
         """
         Inputs: (all are float or int)
         -------
@@ -30,16 +28,20 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
             cpg                  = ground specific heat
             length_component     = length of the adjacent component
             number_element       = number of elements in the radial heat transfer model
-            dist_nexT_cavern_wall= axis distance between caverns
+            dist_next_cavern_wall= axis distance between caverns
             Tg                   = average reservoir ground temperature far from
                                    the salt cavern (constant).
             dist_to_Tg_reservoir = distance from the heat transfer upper and
                                    lower surfaces to a reservoir at Tg
+            dt0                  = initial time step (always stays the same for
+                                   constant time step)
+            bc                   = A dictionary with entries "Q0" and "Qend" for the
+                                   flux into (Q0) and out of (Qend) the GHE. The value
+                                   for Qend is often = 0.0 while Q0 is a variable of
+                                   the component that the GHE is connected to.
             Tgvec0               = Initial condition temperatures. If not provided,
                                    then the entire ground is assumed to be at Tg.
-            dt0                  = initial time step (always stays the same for constant time step)
-            bc                   = An object that has a property Q0 which is used to provide the
-                                   flux input boundary condition.
+
 
         """
         self.dt = dt0
@@ -70,7 +72,7 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
 
         # Space finite volume elements on a log scale to allow a smooth capture of the
         # surface temperature gradient.
-        rr = np.logspace(np.log10(r_inner),np.log10(dist_nexT_cavern_wall/2.0),num=number_element+1)
+        rr = np.logspace(np.log10(r_inner),np.log10(dist_next_cavern_wall/2.0),num=number_element+1)
 
         rrCg = [(r2+r1)/2 for r2,r1 in zip(rr[1:],rr[:-1])]
         rrCg.append(rr[-1])
@@ -100,7 +102,7 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
 
     def _Qfunc(self,Tgvec,idx):
         if idx >= self.number_element:
-            return 0.0 # zero flux boundary condition
+            return self.bc["Qend"] # zero flux boundary condition
         else:
             return (-Tgvec[idx+1] + Tgvec[idx])/self.Rg[idx]
 
@@ -123,7 +125,7 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
         Tgvec_m1 = self.Tgvec_m1
         Tgvec = xg[0:self.number_elements]
         Q = np.zeros(self.number_element+2)
-        Q[0] = self.bc.Q0
+        Q[0] = self.bc["Q0"]
 
         range_index = range(0,self.number_element+1)
 
@@ -139,25 +141,10 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
         return residuals
 
     def get_x(self):
-        pass
+        return self.Tgvec
 
-    def evaluate_jacobian(self,xg):
-        # must do this numerically
-        [self.evaluate_residuals         for range(0,self.number_elements + 1)]
-
-    def step(self,dt,Qsalt0,reset=False):
-
-        Tgvec = self.euler_equn(dt, Qsalt0)
-
-        if not reset:
-            self.solutions[self.time] = {"Q":self.Q,
-                                                  "Tg":Tgvec,
-                                                  "Qg":self.Qg}
-            # use current condition for the next step.
-            self.Tgvec_m1 = Tgvec
-
-        # return the total heat flux out which is passed to hyddown.
-        return Tgvec
+    def load_var_values_from(self,xg):
+        self.Tgvec = xg
 
 
 class HydDown:
@@ -178,35 +165,8 @@ class HydDown:
         self.input = inp
         self.verbose = 0
         self.isrun = False
-        self.validate_input()
         self.read_input()
         self.initialize()
-
-    def validate_input(self):
-        """
-        Validating the provided problem definition dict
-
-        Raises
-        ------
-        ValueError
-            If missing input is detected.
-        """
-        valid_tup = validator.validation(self.input)
-        vobjs = valid_tup[1]
-        valid_test = valid_tup[0]
-        invalid = False
-        error_string = ""
-        for key,val in valid_test.items():
-            valid = val
-            vobj = vobjs[key]
-            if valid is False:
-                #TODO - process this better so that the user knows the exact
-                #       field (or first error) that needs correcting.
-                error_string = error_string + "\n\n" + key + "\n\n" + str(vobj.errors)
-                invalid = True
-
-        if invalid:
-            raise InputFileError("Error in input file:\n\n" + error_string)
 
     def read_input(self):
         """
@@ -310,7 +270,7 @@ class HydDown:
                                                    cpg=inp["cavern"]["salt_heat_capacity"],
                                                    length_component=self.length,
                                                    number_element=inp["heat_transfer"]["number_radial_elements"],
-                                                   dist_nexT_cavern_wall=self.diameter/2.0 + self.salt_thickness,
+                                                   dist_next_cavern_wall=self.diameter/2.0 + self.salt_thickness,
                                                    Tg=inp["cavern"]["salt_farfield_temperature"],
                                                    dist_to_Tg_reservoir=inp["cavern"]["distance_to_farfield_temp"])
 

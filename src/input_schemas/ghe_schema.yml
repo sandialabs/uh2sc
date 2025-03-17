@@ -1,0 +1,48 @@
+name:
+  required: true
+  type: string
+distance_to_farfield_temp:
+  max: 100000
+  min: 0.0
+  required: true
+  type: number
+density:
+  max: 10000
+  min: 1
+  required: true
+  type: number
+farfield_temperature:
+  max: 2000.0
+  min: 273
+  required: true
+  type: number
+heat_capacity:
+  max: 10000
+  min: 1
+  required: true
+  type: number
+thermal_conductivity:
+  max: 2200
+  min: 0.02
+  required: true
+  type: number
+modeled_radial_thickness:
+  min: 0.0
+  required: true
+  type: number
+initial_conditions:
+  Q0:
+    min: -50e12
+    max: 50e12
+    required: true
+    type: number
+  Qend:
+    min: -50e12
+    max: 50e12
+    required: true
+    type: number
+number_elements:
+  min: 1
+  max: 100000
+  required: true
+  type: integer

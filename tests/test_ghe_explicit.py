@@ -12,7 +12,8 @@ import numpy as np
 
 from matplotlib import pyplot as plt
 
-from uh2sc.hdclass import ExplicitAxisymmetricRadialHeatTransfer
+from uh2sc.hdclass import ImplicitEulerAxisymmetricRadialHeatTransfer
+from uh2sc.model import Model
 
 class TestGHE(unittest.TestCase):
     @classmethod
@@ -26,16 +27,16 @@ class TestGHE(unittest.TestCase):
     def test_ghe(self):
         """
         This test confirms that the salt_cavern radially symmetric
-        solver gets similar answers to a PDE solution of the polar heat 
+        solver gets similar answers to a PDE solution of the polar heat
         equation using finite difference elements. A problem that runs
         for 1 month on a daily time step gets a ravern wall temperature difference
         of 2K where the PDE solution heats up less because it uses a linear
-        spacing whereas the axisym solver uses a log spacing for 
-        more accurate surface temperature. 
-        
+        spacing whereas the axisym solver uses a log spacing for
+        more accurate surface temperature.
+
         """
 
-        # SETUP YOUR METHOD OF SOLUTION
+                # SETUP YOUR METHOD OF SOLUTION
         t_end = 2592000
         t_step = 600  # a daily time step is fine
 
@@ -58,11 +59,35 @@ class TestGHE(unittest.TestCase):
         q_in = 8000  # for polar coordinates this is W/m
 
         q_in_cavern = q_in * h_cavern
+        bc_cavern = {"Q0":q_in_cavern, "Qend": 0.0}
+
 
         alpha = kg/(rhog * cpg)
 
 
-        axsym = ExplicitAxisymmetricRadialHeatTransfer(r_cavern,
+        inp = {}
+        inp["name"] = "test_ghe"
+        inp["distance_to_farfield_temp"] = 1e10
+        inp["density"] = 2200
+        inp["farfield_temperature"] = 323
+        inp["heat_capacity"] = 880
+        inp["thermal_conductivity"] = 0.6
+        inp["modeled_radial_thickness"] = 40.5
+        inp["initial_conditions"] = {}
+        inp["initial_conditions"]["Q0"] = q_in_cavern
+        inp["initial_conditions"]["Qend"] = 0.0
+        inp["number_elements"] = 150
+
+        model = Model(inp)
+
+
+
+
+
+
+
+
+        axsym = ImplicitEulerAxisymmetricRadialHeatTransfer(r_cavern,
                   kg,
                   rhog,
                   cpg,
@@ -70,7 +95,9 @@ class TestGHE(unittest.TestCase):
                   number_element,
                   dist_next_cavern,
                   t_g,
-                  dist_to_tg_reservoir)
+                  dist_to_tg_reservoir,
+                  bc=bc_cavern,
+                  dt0=t_step)
 
         for _step in range(int(t_end/t_step)):
 

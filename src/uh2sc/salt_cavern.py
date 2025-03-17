@@ -43,19 +43,7 @@ class SaltCavern(AbstractComponent, HydDown):
     def __str__(self):
         return "Salt Cavern Object"
 
-    def __init__(self,inp):
-
-        # enable reading a file or accepting a valid dictionary
-        if isinstance(inp,str):
-            with open(inp,'r',encoding='utf-8') as infile:
-                input_dict = yaml.load(infile, Loader=yaml.FullLoader)
-        elif isinstance(inp,dict):
-            input_dict = inp
-        else:
-            raise TypeError("The input object 'inp' must be a string that "+
-                            "gives a path to a uh2sc yaml input file or must"+
-                            " be a dictionary.")
-
+    def __init__(self,input_dict):
         # this includes validation of the input dictionary which must follow
         # the main schema in validatory.py
         super().__init__(input_dict)

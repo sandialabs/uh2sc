@@ -28,11 +28,6 @@ cavern:
     diameter:
       required: true
       type: number
-    distance_to_farfield_temp:
-      max: 100000
-      min: 0.0
-      required: true
-      type: number
     height:
       required: true
       type: number
@@ -43,30 +38,9 @@ cavern:
       min: 0.0
       required: true
       type: number
-    salt_density:
-      max: 10000
-      min: 1
+    ghe_name:
+      type: str
       required: true
-      type: number
-    salt_farfield_temperature:
-      max: 2000.0
-      min: 273
-      required: true
-      type: number
-    salt_heat_capacity:
-      max: 10000
-      min: 1
-      required: true
-      type: number
-    salt_thermal_conductivity:
-      max: 2200
-      min: 0.02
-      required: true
-      type: number
-    salt_thickness:
-      min: 0.0
-      required: true
-      type: number
   type: dict
 heat_transfer:
   allow_unknown: false
@@ -111,145 +85,11 @@ initial:
       required: true
       type: number
   type: dict
-validation:
-  allow_unknown: false
-  allowed:
-  - pressure
-  - temperature
-  required: false
-  schema:
-    pressure:
-      contains:
-      - time
-      - pres
-      required: false
-      schema:
-        pres:
-          required: false
-          schema:
-            type: number
-          type: list
-        time:
-          required: false
-          schema:
-            type: number
-          type: list
-      type: dict
-    temperature:
-      allowed:
-      - wall_high
-      - wall_low
-      - wall_mean
-      - gas_high
-      - gas_low
-      - gas_mean
-      required: false
-      schema:
-        gas_high:
-          contains:
-          - time
-          - temp
-          required: false
-          schema:
-            temp:
-              required: false
-              schema:
-                type: number
-              type: list
-            time:
-              required: false
-              schema:
-                type: number
-              type: list
-          type: dict
-        gas_low:
-          contains:
-          - time
-          - temp
-          required: false
-          schema:
-            temp:
-              required: false
-              schema:
-                type: number
-              type: list
-            time:
-              required: false
-              schema:
-                type: number
-              type: list
-          type: dict
-        gas_mean:
-          contains:
-          - time
-          - temp
-          required: false
-          schema:
-            temp:
-              required: false
-              schema:
-                type: number
-              type: list
-            time:
-              required: false
-              schema:
-                type: number
-              type: list
-          type: dict
-        wall_high:
-          contains:
-          - time
-          - temp
-          required: false
-          schema:
-            temp:
-              required: false
-              schema:
-                type: number
-              type: list
-            time:
-              required: false
-              schema:
-                type: number
-              type: list
-          type: dict
-        wall_low:
-          contains:
-          - time
-          - temp
-          required: false
-          schema:
-            temp:
-              required: false
-              schema:
-                type: number
-              type: list
-            time:
-              required: false
-              schema:
-                type: number
-              type: list
-          type: dict
-        wall_mean:
-          contains:
-          - time
-          - temp
-          required: false
-          schema:
-            temp:
-              required: false
-              schema:
-                type: number
-              type: list
-            time:
-              required: false
-              schema:
-                type: number
-              type: list
-          type: dict
-      type: dict
-  type: dict
 wells:
+  allow_unknown: true
+  required: true
+  type: dict
+ghes:
   allow_unknown: true
   required: true
   type: dict
