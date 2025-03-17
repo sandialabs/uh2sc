@@ -4,12 +4,14 @@ Created on Wed Oct 18 17:20:21 2023
 
 @author: dlvilla
 """
-
-from .hdclass import HydDown
 import pandas as pd
 import yaml
 
-class SaltCavern(HydDown):
+from .abstract import AbstractComponent
+from .hdclass import HydDown
+
+
+class SaltCavern(AbstractComponent, HydDown):
 
     """
     This uses a much abridged version of HyDown functionality and adds radial
@@ -24,6 +26,9 @@ class SaltCavern(HydDown):
 
     TODO - make cavern size a function of pressure (elastic strain) and creep
            (plastic strain).
+
+    Variables:
+    ==========
 
     """
 

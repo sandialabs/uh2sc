@@ -2,6 +2,7 @@
 # Copyright (c) 2021 Anders Andreasen
 # Published under an MIT license
 
+
 import math
 import numpy as np
 from scipy.optimize import minimize
@@ -14,36 +15,39 @@ from uh2sc.well import process_CP_gas_string
 from uh2sc.errors import NumericAnomaly,MassTooLow,InputFileError
 from uh2sc.constants import Constants
 from uh2sc.utilities import filter_cpu_count
+from uh2sc.abstract import AbstractComponent
 
+class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
 
-class ExplicitAxisymmetricRadialHeatTransfer(object):
-
-    def __init__(self,r_cavern,kg,rhog,cpg,h_cavern,number_element,dist_nexT_cavern_wall,Tg,
-                 dist_to_Tg_reservoir,Tgvec0=None):
+    def __init__(self,r_inner,kg,rhog,cpg,length_component,number_element,dist_nexT_cavern_wall,Tg,
+                 dist_to_Tg_reservoir,Tgvec0=None,bc=None):
         """
         Inputs: (all are float or int)
         -------
-            r_cavern             = cavern radius
+            r_inner              = inner radius where heat transfer begins
             kg                   = ground thermal conductivity
             rhog                 = ground density
             cpg                  = ground specific heat
-            h_cavern             = height of the cavern
+            length_component     = length of the adjacent component
             number_element       = number of elements in the radial heat transfer model
-            dist_nexT_cavern_wall     = axis distance between caverns
+            dist_nexT_cavern_wall= axis distance between caverns
             Tg                   = average reservoir ground temperature far from
                                    the salt cavern (constant).
             dist_to_Tg_reservoir = distance from the heat transfer upper and
                                    lower surfaces to a reservoir at Tg
             Tgvec0               = Initial condition temperatures. If not provided,
                                    then the entire ground is assumed to be at Tg.
+            dt0                  = initial time step (always stays the same for constant time step)
+            bc                   = An object that has a property Q0 which is used to provide the
+                                   flux input boundary condition.
 
         """
-
+        self.dt = dt0
         self.number_element = number_element
 
-        self.r_cavern = r_cavern
+        self.r_inner = r_inner
 
-        self.h_cavern = h_cavern
+        self.length_component = length_component
 
         self.solutions = {}
         self.time_step_num = 0
@@ -56,6 +60,8 @@ class ExplicitAxisymmetricRadialHeatTransfer(object):
 
         self.Qg = np.zeros(number_element)
 
+        self.bc = bc
+
         # initial conditions
         if Tgvec0 is None:
             self.Tgvec_m1 = Tg * np.ones(number_element+1)
@@ -64,16 +70,16 @@ class ExplicitAxisymmetricRadialHeatTransfer(object):
 
         # Space finite volume elements on a log scale to allow a smooth capture of the
         # surface temperature gradient.
-        rr = np.logspace(np.log10(r_cavern),np.log10(dist_nexT_cavern_wall/2.0),num=number_element+1)
+        rr = np.logspace(np.log10(r_inner),np.log10(dist_nexT_cavern_wall/2.0),num=number_element+1)
 
         rrCg = [(r2+r1)/2 for r2,r1 in zip(rr[1:],rr[:-1])]
         rrCg.append(rr[-1])
         rrCg.insert(0,rr[0])
 
         # Radial Heat capacitance of rings of volume of ground
-        self.Cg = [rhog * np.pi * (r2**2.0 - r1**2.0) * self.h_cavern * cpg for r2,r1 in zip(rrCg[1:],rrCg[:-1])]
+        self.Cg = [rhog * np.pi * (r2**2.0 - r1**2.0) * self.length_component * cpg for r2,r1 in zip(rrCg[1:],rrCg[:-1])]
         # Radial thermal resistivity of rings of volume of ground
-        self.Rg = [np.log(rout/rin)/(2.0*np.pi * self.h_cavern * kg) for rout,rin in zip(rr[1:],rr[:-1])]
+        self.Rg = [np.log(rout/rin)/(2.0*np.pi * self.length_component * kg) for rout,rin in zip(rr[1:],rr[:-1])]
         self.Rg.append(self.Rg[-1]*1e4)  # This produces a zero flux boundary condition
 
         if isinstance(dist_to_Tg_reservoir,(float,int)):
@@ -92,14 +98,14 @@ class ExplicitAxisymmetricRadialHeatTransfer(object):
 
 
 
-    def _Qfunc(self,Tgvec_m1,idx):
+    def _Qfunc(self,Tgvec,idx):
         if idx >= self.number_element:
             return 0.0 # zero flux boundary condition
         else:
-            return (-Tgvec_m1[idx+1] + Tgvec_m1[idx])/self.Rg[idx]
+            return (-Tgvec[idx+1] + Tgvec[idx])/self.Rg[idx]
 
 
-    def euler_equn(self,dt,Qsalt0):
+    def evaluate_residuals(self,xg):
         """
         Inputs:
             Variables:
@@ -107,34 +113,37 @@ class ExplicitAxisymmetricRadialHeatTransfer(object):
             Tgvec - vector of ground temperatures spaced radially from the GSHX
 
             Tgvec_m1 - Tgvec for the previous time step
+
+        Returns
+        =======
+            residuals - error level from solving the implicit equations
+                        np.array of length number_elements + 1
         """
-        self.time_step_num += 1
-        self.time = self.time + dt
-
-        # initialize vectors
+        # get prevous solution
         Tgvec_m1 = self.Tgvec_m1
+        Tgvec = xg[0:self.number_elements]
         Q = np.zeros(self.number_element+2)
-        Tgvec = np.zeros(self.number_element+1)
-        Qg = np.zeros(self.number_element+1)
-        Q[0] = Qsalt0
+        Q[0] = self.bc.Q0
 
-        for idx in range(0,self.number_element+1):
+        range_index = range(0,self.number_element+1)
 
-            Qg[idx] = (Tgvec_m1[idx] - self.Tg)/self.RTg[idx]
+        Qg = [(Tgvec[idx] - self.Tg)/self.RTg[idx] for idx in range_index]
 
-            Q[idx+1] = self._Qfunc(Tgvec_m1,idx)
+        Q[1:] = [self._Qfunc(Tgvec,idx) for idx in range_index]
 
-            #Euler integration of the ODE
+        #Euler implicit integration of the ODE
 
-            Tgvec[idx] = (Q[idx]-(Q[idx+1]+Qg[idx-1])) * dt / self.Cg[idx-1] + Tgvec_m1[idx]
+        residuals = np.array([(Q[idx]-(Q[idx+1]+Qg[idx-1])) * self.dt / self.Cg[idx-1]
+                    + Tgvec_m1[idx] - Tgvec[idx] for idx in range_index])
 
+        return residuals
 
-            # keep track of total energy lost to ground temperature potential
+    def get_x(self):
+        pass
 
-        self.Q = Q
-        self.Qg = Qg
-
-        return Tgvec
+    def evaluate_jacobian(self,xg):
+        # must do this numerically
+        [self.evaluate_residuals         for range(0,self.number_elements + 1)]
 
     def step(self,dt,Qsalt0,reset=False):
 
@@ -149,6 +158,7 @@ class ExplicitAxisymmetricRadialHeatTransfer(object):
 
         # return the total heat flux out which is passed to hyddown.
         return Tgvec
+
 
 class HydDown:
     """
@@ -298,7 +308,7 @@ class HydDown:
                                                    kg=inp["cavern"]["salt_thermal_conductivity"],
                                                    rhog=inp["cavern"]["salt_density"],
                                                    cpg=inp["cavern"]["salt_heat_capacity"],
-                                                   h_cavern=self.length,
+                                                   length_component=self.length,
                                                    number_element=inp["heat_transfer"]["number_radial_elements"],
                                                    dist_nexT_cavern_wall=self.diameter/2.0 + self.salt_thickness,
                                                    Tg=inp["cavern"]["salt_farfield_temperature"],
