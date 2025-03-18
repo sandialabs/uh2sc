@@ -12,11 +12,34 @@ class AbstractComponent(ABC):
     @property
     @abstractmethod
     def global_indices(self):
+        """
+        This property must give the indices that give the begin and end location
+        in the global variable vector (xg)
+        """
         pass
 
+    @property
     @abstractmethod
-    def evaluate_residuals(self,xg):
-        """_summary_
+    def previous_adjacent_components(self):
+        """
+        Interface variable indices for the previous component
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def next_adjacent_components(self):
+        """
+        interface variable indices for the next component
+        """
+
+    @abstractmethod
+    def evaluate_residuals(self,x=None):
+        """
+        Must first evaluate all interface equations for indices produced by interface_var_ind_prev_comp
+
+        Then must evaluate all internal component equations
+
 
         Args:
             xg numpy.array : global x vector for the entire
@@ -29,9 +52,11 @@ class AbstractComponent(ABC):
         pass
 
     @abstractmethod
-    def load_var_values_from(self,xg):
+    def load_var_values_from_x(self,xg):
         pass
 
-    def evaluate_jacobian(self,xg):
+    def evaluate_jacobian(self,x=None):
         # must do this numerically and we follow the same routine
-        return jacobian(self.residuals, xg)
+        if x is None:
+            x = self.get_x()
+        return jacobian(self.evaluate_residuals, x)

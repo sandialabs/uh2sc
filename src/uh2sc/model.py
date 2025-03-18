@@ -7,11 +7,25 @@ import numpy as np
 from uh2sc import validator
 from uh2sc.errors import InputFileError
 from uh2sc.solvers import NewtonSolver
+from uh2sc.abstract import AbstractComponent
 from uh2sc.hdclass import ImplicitEulerAxisymmetricRadialHeatTransfer
 
 ADJ_COMP_TESTING_NAME = "testing"
 
-class Model(object):
+class Model(AbstractComponent):
+    """
+    Formulate a model that consistst of components. Each component has an abstract
+     class as its base in uh2sc.abstract.AbstractComponent. Interface and boundary
+     conditions are handled as additional equations. Each component has a method
+     called "evaluate_residuals." Current valid components are:
+
+     1. Cavern
+     2. Arbitrary number of wells
+     3. Arbitrary number of 1-D axisymmetric heat transfer through the ground
+
+     Future versions may include multiple caverns that are connected via
+     surface pipes and may include pumps/compressors.
+    """
 
     def __init__(self,inp,single_component_test=False,**kwargs):
 
@@ -73,16 +87,67 @@ class Model(object):
         for _time in self.times:
             self.solver.solve(self)
 
+    @property
+    def next_adjacent_components(self):
+        """_summary_
+        One day we may make this code be able to
+        connect two models but we have not yet
+        Done this
+        """
+        return []
+
+    @property
+    def previous_adjacent_components(self):
+        """_summary_
+        One day we may make this code be able to
+        connect two models but we have not yet
+        Done this
+        """
+        return []
+
+    @property
+    def global_indices(self):
+        """
+        This property must give the indices that give the begin and end location
+        in the global variable vector (xg). Since this is the entire model
+        it will return the entire range.
+        """
+        return (0, len(self.xg))
+
     def get_x(self):
         xg = self.xg
         for cname, component in self.components.items():
             bind, eind = component.global_indices
             xg[bind:eind] = component.get_x()
+        return xg
 
-    def evaluate_residuals(self):
+    def evaluate_residuals(self,x=None):
         residuals = []
-        for cname, component in self.components.items():
-            residuals += component.evaluate_residual(self.xg)
+        if x is None:
+            for _cname, component in self.components.items():
+
+                # this is the single x behavior used by
+                # local evaluations of residuals
+                residuals += list(component.evaluate_residuals())
+        else:
+            # this is for scipy where a matrix of all the different
+            # vectors needed to evaluate the jacobian is fed in
+            if x.ndim == 2:
+                for xv in x:
+                    v_residuals = []
+                    for _cname, component in self.components.items():
+                        v_residuals += list(component.evaluate_residuals(xv))
+                    residuals.append(v_residuals)
+            elif x.ndim == 1:
+                for _cname, component in self.components.items():
+
+                    # this is the single x behavior used by
+                    # local evaluations of residuals
+                    residuals += list(component.evaluate_residuals(x))
+
+
+
+        return np.array(residuals)
 
 
     def load_var_values_from_x(self, xg_new):
@@ -163,8 +228,25 @@ class Model(object):
         self.xg = np.array(xg)
         self.components = components
 
+    def _assign_max_from_adj_comp(self,adj_comps,name,multfact,arrind=None):
+        val = 0.0
 
+        for tup in adj_comps:
+            adjacent_comp = tup[1]
+            if "pipe_diameters" in adjacent_comp:
+                if name == "height":
+                    name = "pipe_lengths"
+                if name == "diameter":
+                    name = "pipe_diameters"
+                if arrind is None:
+                    val = np.max(val,adjacent_comp[name]*multfact)
+                else:
+                    val = np.max(val, adjacent_comp[name][arrind]*multfact)
 
+            else:
+                val = np.max(val,adjacent_comp[name]*multfact)
+
+        return val
 
 
     def _build_ghes(self,x_desc,xg,components):
@@ -187,38 +269,66 @@ class Model(object):
                 t_step = self.test_inputs["dt"]
                 height = self.test_inputs["height"]
                 inner_radius = self.test_inputs["inner_radius"]
-                adjacent_comp = {}
+                adjacent_comps = {}
                 adjcomp_name = ADJ_COMP_TESTING_NAME
                 # backfit missing stuff to get the solution to work.
                 self.inputs["calculation"] = {}
                 self.inputs["calculation"]["end_time"] = self.test_inputs["end_time"]
                 self.inputs["calculation"]["time_step"] = self.test_inputs["dt"]
             else:
-                # the component adjacent to this GHE!
-                adjcomp_name, adjacent_comp = self._find_ghe(name)
-                if "pipe_diameters" in adjacent_comp:
-                    inner_radius = adjacent_comp["pipe_diameters"][-1]/2
-                    height = adjacent_comp["pipe_lengths"]
+                # find the adjacent components to this GHE!
+                adjacent_comps = self._find_ghe_adj_comp(name)
+
+                # set the inner_radius and height either based on user input
+                # or based on the maximum value from adjacent copmonents for height
+                # and diameter.
+                if "inner_radius" in ghe:
+                    inner_radius = ghe["inner_radius"]
                 else:
-                    inner_radius = adjacent_comp["diameter"]/2
-                    height = adjacent_comp["height"]
+                    if len(adjacent_comps) == 0:
+                        raise ValueError("Axi-symmetric heat transfer must have "
+                                         +"at least one adjacent component if the"
+                                         +" inner_radius is not defined in the input!")
+
+                    inner_radius = self._assign_max_from_adj_comp(adjacent_comps,
+                                                                  "diameter",
+                                                                  0.5,
+                                                                  -1)
+                if "height" in ghe:
+                    height = ghe["height"]
+                else:
+                    if len(adjacent_comps) == 0:
+                        raise ValueError("Axi-symmetric heat transfer must have "
+                                         +"at least one adjacent component if the"
+                                         +" height is not defined in the input!")
+                    height = self._assign_max_from_adj_comp(adjacent_comps,
+                                                            "height",
+                                                            1.0)
+                # set the constant time step
+
                 t_step = self.inputs["calculations"]["time_step"]
 
-            # modifies the adjacent component's inputs so that
-            # we can permanently find the common variable between
-            # these.
-            adjacent_comp["temp_continuity_idx"] = len(xg)
-            adjacent_comp["name"] = adjcomp_name
 
 
+
+
+            # begin global indice
             beg_idx = len(xg)
 
-            xg += [ghe["farfield_temperature"] for _idx in range(ghe["number_elements"])]
+            xg += [ghe["initial_conditions"]["Q0"]]
+            x_desc += [f"GHE name `{name}` heat flux at inner_radius (W)"]
+
+            # add all new terms that belong to the descriptions and to the
+            xg += [ghe["farfield_temperature"] for _idx in range(ghe["number_elements"]+1)]
             x_desc += [f"GHE name `{name}` element {idx} outer temperature "
                        +"(inner temperature element {idx-1})"
-                       for idx in range(ghe["number_elements"])]
+                       for idx in range(ghe["number_elements"]+1)]
 
-            end_idx = len(xg)
+            xg += [ghe["initial_conditions"]["Qend"]]
+            x_desc += [f"GHE name `{name}` heat flux at outer_radius (W)"]
+
+            #end of global indices for this component
+            end_idx = len(xg)+1
 
             components[name] = ImplicitEulerAxisymmetricRadialHeatTransfer(inner_radius,
                   ghe["thermal_conductivity"],
@@ -231,7 +341,7 @@ class Model(object):
                   ghe["distance_to_farfield_temp"],
                   bc=ghe["initial_conditions"],
                   dt0=t_step,
-                  adj_comp=adjacent_comp,
+                  adj_comps=adjacent_comps,
                   global_indices=(beg_idx,end_idx))
 
 
@@ -285,14 +395,16 @@ class Model(object):
                             " be a dictionary with the proper format for uh2sc.")
         return input_dict
 
-    def _find_ghe(self,ghe_name):
+    def _find_ghe_adj_comp(self,ghe_name):
+        """
+        Find out how many adjacent components the axisymmetric
+        ground heat exchange (GHE) has. Every component contributes
+        a heat flux to the GHE
+        """
+        adj_comp = []
         for wname, well in self.inputs["wells"].items():
             if well["ghe_name"] == ghe_name:
-                return wname,well
+                adj_comp.append(wname,well)
         if ghe_name == self.inputs["cavern"]["ghe_name"]:
-            return "cavern",cavern
-        else:
-            raise ValueError("The name `{ghe_name}` is not referenced by any"
-                        +" well or the cavern, it is isolated and must be included"
-                        +" in a `ghe_name` field for the cavern or a well in the "
-                        +"input file!")
+            adj_comp.append("cavern",cavern)
+        return adj_comp

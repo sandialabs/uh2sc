@@ -290,7 +290,7 @@ class NewtonSolver(object):
                     outer_iter,
                 )
 
-            J = model.evaluate_jacobian(x=None)
+            J = model.evaluate_jacobian(x)
 
             # Call Linear solver
             try:

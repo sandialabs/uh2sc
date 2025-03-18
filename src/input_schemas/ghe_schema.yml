@@ -43,3 +43,13 @@ number_elements:
   max: 100000
   required: true
   type: integer
+height:
+  min: 0.001
+  max: 30000
+  required: false
+  type: number
+inner_radius:
+  min: 0.001
+  max: 30000
+  required: false
+  type: number

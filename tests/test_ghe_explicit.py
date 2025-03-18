@@ -11,9 +11,67 @@ import numpy as np
 
 
 from matplotlib import pyplot as plt
-
-from uh2sc.hdclass import ImplicitEulerAxisymmetricRadialHeatTransfer
 from uh2sc.model import Model
+
+
+
+        # SETUP YOUR METHOD OF SOLUTION
+t_end = 2592000
+t_step = 600  # a daily time step is fine
+
+# salt characteristics
+salt_thermal_conductivity = 0.6 #W/m-K
+salt_specific_heat = 880 #J/kg-K
+salt_density = 2200 # kg/m3
+
+r_cavern = 10
+kg = salt_thermal_conductivity
+rhog = salt_density
+cpg = salt_specific_heat
+h_cavern = 100 #m
+number_element = 150
+number_pde_elem = 150
+dist_next_cavern = 40.5
+t_g = 323
+dist_to_tg_reservoir = 1e10 # make transfer to ground negligible
+
+q_in = 8000  # for polar coordinates this is W/m
+
+q_in_cavern = q_in * h_cavern
+bc_cavern = {"Q0":q_in_cavern, "Qend": 0.0}
+
+
+alpha = kg/(rhog * cpg)
+
+
+inp = {}
+inp["name"] = "test_ghe"
+inp["distance_to_farfield_temp"] = 1e10
+inp["density"] = 2200
+inp["farfield_temperature"] = 323
+inp["heat_capacity"] = 880
+inp["thermal_conductivity"] = 0.6
+inp["modeled_radial_thickness"] = 40.5
+inp["initial_conditions"] = {}
+inp["initial_conditions"]["Q0"] = q_in_cavern
+inp["initial_conditions"]["Qend"] = 0.0
+inp["number_elements"] = 150
+
+ghe_inp = {}
+ghe_inp["ghes"] = {}
+ghe_inp["ghes"]["ghe_test"] = inp
+
+model = Model(ghe_inp,single_component_test=True,
+                dt=t_step,end_time=t_end,type="ghe",
+                inner_radius=r_cavern,Q0=q_in_cavern,Qend=0.0,
+                height=h_cavern)
+
+model.run()
+
+
+
+
+
 
 class TestGHE(unittest.TestCase):
     @classmethod
