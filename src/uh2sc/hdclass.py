@@ -184,9 +184,10 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
             Tgvec = self.Tgvec
             Q[-1] = self.Q[-1]
         else:
-            Q[0] = x[0]
-            Tgvec = x[1:-1]
-            Q[-1] = x[-1]
+            xx = x.primal
+            Q[0] = xx[0]
+            Tgvec = xx[1:-1]
+            Q[-1] = xx[-1]
 
         # set the interface condition equations
         # or boundary condition equations

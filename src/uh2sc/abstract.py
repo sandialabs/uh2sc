@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 import numpy as np
-from scipy.differentiate import jacobian
+from scipy.sparse import csr_matrix
+import jax
+import jax.numpy as jnp
 
 class AbstractComponent(ABC):
 
@@ -59,4 +61,11 @@ class AbstractComponent(ABC):
         # must do this numerically and we follow the same routine
         if x is None:
             x = self.get_x()
-        return jacobian(self.evaluate_residuals, x)
+            
+        def compute_jacobian(func,x):
+            return jax.jacfwd(func)(x)
+        
+        
+        J = compute_jacobian(self.evaluate_residuals,x)
+        
+        return csr_matrix(J)

@@ -9,6 +9,8 @@ from uh2sc.errors import InputFileError
 from uh2sc.solvers import NewtonSolver
 from uh2sc.abstract import AbstractComponent
 from uh2sc.hdclass import ImplicitEulerAxisymmetricRadialHeatTransfer
+import jax.numpy as jnp
+
 
 ADJ_COMP_TESTING_NAME = "testing"
 
@@ -129,6 +131,8 @@ class Model(AbstractComponent):
                 # this is the single x behavior used by
                 # local evaluations of residuals
                 residuals += list(component.evaluate_residuals())
+                
+            return np.array(residuals)
         else:
             # this is for scipy where a matrix of all the different
             # vectors needed to evaluate the jacobian is fed in
@@ -147,7 +151,7 @@ class Model(AbstractComponent):
 
 
 
-        return np.array(residuals)
+            return jnp.array(residuals)
 
 
     def load_var_values_from_x(self, xg_new):
