@@ -59,13 +59,32 @@ class AbstractComponent(ABC):
 
     def evaluate_jacobian(self,x=None):
         # must do this numerically and we follow the same routine
-        if x is None:
-            x = self.get_x()
+        if False:
+            if x is None:
+                x = self.get_x()
+                
+            def compute_jacobian(func,x):
+                return jax.jacfwd(func)(x)
             
-        def compute_jacobian(func,x):
-            return jax.jacfwd(func)(x)
-        
-        
-        J = compute_jacobian(self.evaluate_residuals,x)
-        
-        return csr_matrix(J)
+            
+            J = compute_jacobian(self.evaluate_residuals,x)
+            breakpoint()
+            return csr_matrix(J)
+        else:
+            if x is None:
+                x = self.get_x()
+            J = np.zeros((len(x),len(x)))
+            
+            r = self.evaluate_residuals(x)
+            
+            for idx in range(len(x)):
+                dx = np.zeros(len(x))
+                dx[idx] = 0.00001
+                xdx = x + dx
+                dfdx = (self.evaluate_residuals(xdx) - r)/0.00001
+            
+                J[:,idx] = dfdx
+                
+            return csr_matrix(J)
+            
+                

@@ -83,11 +83,21 @@ class Model(AbstractComponent):
                     + 1)
         # constant time steps
         self.times = [idx * time_step for idx in range(nstep)]
-
+        self._solutions = {}
+    
+    @property
+    def solutions(self):
+        return self._solutions
 
     def run(self):
-        for _time in self.times:
+        for time in self.times:
             self.solver.solve(self)
+            
+            # gather the results
+            self._solutions[time] = {}
+            for cname, component in self.components.items():
+                self._solutions[time][cname] = component.get_x()
+
 
     @property
     def next_adjacent_components(self):
@@ -120,7 +130,7 @@ class Model(AbstractComponent):
         xg = self.xg
         for cname, component in self.components.items():
             bind, eind = component.global_indices
-            xg[bind:eind] = component.get_x()
+            xg[bind:eind+1] = component.get_x()
         return xg
 
     def evaluate_residuals(self,x=None):
@@ -151,7 +161,7 @@ class Model(AbstractComponent):
 
 
 
-            return jnp.array(residuals)
+            return np.array(residuals)
 
 
     def load_var_values_from_x(self, xg_new):
@@ -332,7 +342,7 @@ class Model(AbstractComponent):
             x_desc += [f"GHE name `{name}` heat flux at outer_radius (W)"]
 
             #end of global indices for this component
-            end_idx = len(xg)+1
+            end_idx = len(xg)-1
 
             components[name] = ImplicitEulerAxisymmetricRadialHeatTransfer(inner_radius,
                   ghe["thermal_conductivity"],

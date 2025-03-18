@@ -88,7 +88,7 @@ class TestGHE(unittest.TestCase):
 
         model.run()
 
-
+        breakpoint()
         comparison_data = self.comparable_solution_by_different_method(alpha, q_in, kg, t_end,
                                                     r1=r_cavern,
                                                     r2=dist_next_cavern/2.0,
@@ -98,19 +98,22 @@ class TestGHE(unittest.TestCase):
         r_step = (dist_next_cavern/2 - r_cavern)/(number_pde_elem+1)
         linear_grid = np.arange(r_cavern,dist_next_cavern/2,r_step)
 
-        sol = axsym.solutions
+        sol = model.solutions
         avg_error = {}
         max_error = {}
-        for tup,crow in zip(axsym.solutions,comparison_data):
-            row = sol[tup]['Tg']
-            interp_crow = np.interp(axsym.grid,linear_grid,crow)
-            avg_error[tup] = (row - interp_crow).sum()/number_element
-            max_error[tup] = (row - interp_crow).max()
+
+        breakpoint()
+        for tup,crow in zip(sol.items(),comparison_data):
+            time = tup[0]
+            row = sol[time]['ghe_test']
+            interp_crow = np.interp(model.components["ghe_test"].grid,linear_grid,crow)
+            avg_error[time] = (row[1:-1] - interp_crow).sum()/number_element
+            max_error[time] = (row[1:-1] - interp_crow).max()
 
         if len(linear_grid) > len(crow):
             linear_grid = linear_grid[:len(crow)-len(linear_grid)]
 
-        plt.plot(axsym.grid,row,linear_grid,crow)
+        plt.plot(model.components["ghe_test"].grid,row[1:-1],linear_grid,crow)
         plt.legend(["mine","pde"])
 
 
