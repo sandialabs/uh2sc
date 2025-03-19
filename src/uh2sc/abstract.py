@@ -3,6 +3,13 @@ import numpy as np
 from scipy.sparse import csr_matrix
 import jax
 import jax.numpy as jnp
+from enum import Enum
+
+class ComponentTypes(Enum):
+    MODEL = 1
+    GHE = 2
+    WELL = 3
+    CAVERN = 4
 
 class AbstractComponent(ABC):
 
@@ -33,6 +40,15 @@ class AbstractComponent(ABC):
     def next_adjacent_components(self):
         """
         interface variable indices for the next component
+        """
+        
+    @property
+    @abstractmethod
+    def component_type(self):
+        """
+        A string that allows the user to identify what kind of component 
+        this is so that specific properties and methods can be invoked
+
         """
 
     @abstractmethod

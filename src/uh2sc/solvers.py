@@ -258,6 +258,8 @@ class NewtonSolver(object):
             )
 
         use_r_ = False
+        new_norm = None
+        r_ = None
 
         # MAIN NEWTON LOOP
         for outer_iter in range(self.maxiter):

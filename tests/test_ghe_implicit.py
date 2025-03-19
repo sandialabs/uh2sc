@@ -38,6 +38,10 @@ class TestGHE(unittest.TestCase):
                 # SETUP YOUR METHOD OF SOLUTION
         t_end = 2592000
         t_step = 600  # a daily time step is fine
+        implicit_mult = 144  # maximal time step that only had a slight error
+        # a 1 day time step is ok for the implicit solver. ( in comparison to
+        # 600 seconds for the original explicity solver.)
+        # 
 
         # salt characteristics
         salt_thermal_conductivity = 0.6 #W/m-K
@@ -82,13 +86,12 @@ class TestGHE(unittest.TestCase):
         ghe_inp["ghes"]["ghe_test"] = inp
 
         model = Model(ghe_inp,single_component_test=True,
-                       dt=t_step,end_time=t_end,type="ghe",
+                       dt=t_step*implicit_mult,end_time=t_end,type="GHE",
                        inner_radius=r_cavern,Q0=q_in_cavern,Qend=0.0,
                        height=h_cavern)
 
         model.run()
 
-        breakpoint()
         comparison_data = self.comparable_solution_by_different_method(alpha, q_in, kg, t_end,
                                                     r1=r_cavern,
                                                     r2=dist_next_cavern/2.0,
@@ -102,13 +105,15 @@ class TestGHE(unittest.TestCase):
         avg_error = {}
         max_error = {}
 
-        breakpoint()
-        for tup,crow in zip(sol.items(),comparison_data):
+        idx = 0
+        for tup in sol.items():
+            crow = comparison_data[idx*implicit_mult,:]
             time = tup[0]
             row = sol[time]['ghe_test']
             interp_crow = np.interp(model.components["ghe_test"].grid,linear_grid,crow)
             avg_error[time] = (row[1:-1] - interp_crow).sum()/number_element
             max_error[time] = (row[1:-1] - interp_crow).max()
+            idx+=1
 
         if len(linear_grid) > len(crow):
             linear_grid = linear_grid[:len(crow)-len(linear_grid)]
@@ -117,9 +122,10 @@ class TestGHE(unittest.TestCase):
         plt.legend(["mine","pde"])
 
 
-        self.assertFalse(max_error[tup] > 2.1) # Kelvin
-        self.assertFalse(avg_error[tup] > 0.75) # Kelvin
-
+        self.assertFalse(max_error[time] > 2.1) # Kelvin
+        self.assertFalse(avg_error[time] > 0.75) # Kelvin
+        
+        
         # GET THE COMPARABLE SOLUTION
 
     def comparable_solution_by_different_method(self,alpha,q_in,kg,t_end,r1,r2,num_elem,t_step):

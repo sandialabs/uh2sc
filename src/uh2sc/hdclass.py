@@ -13,7 +13,7 @@ from uh2sc import transport as tp
 from uh2sc.errors import NumericAnomaly,MassTooLow,InputFileError
 from uh2sc.constants import Constants
 from uh2sc.utilities import filter_cpu_count, process_CP_gas_string
-from uh2sc.abstract import AbstractComponent
+from uh2sc.abstract import AbstractComponent, ComponentTypes
 
 class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
 
@@ -136,6 +136,18 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
         it is the end of the line w/r to the model
         """
         return []
+    
+    @property
+    def component_type(self):
+        return ComponentTypes(2).name
+    
+    def shift_solution(self):
+        """
+        Make move the solution for the previous time step to the current time 
+        step
+        """
+        self.Tgvec_m1 = self.Tgvec
+        
 
     def evaluate_residuals(self, x=None):
         """
@@ -201,8 +213,10 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
             +"where this is connected to something!!!")
         next_comp = self.next_adjacent_components
         if len(next_comp) == 0:
+            # flux condition on end
             residuals[-1] = Q[-1] - self.bc["Qend"]
-            residuals[-2] = Q[-1] - self._Qfunc(Tgvec,-1)
+            # flux condition on end extends into the last CV.
+            residuals[-2] = Q[-1] - self._Qfunc(Tgvec,self.number_elements-1)
         else:
             raise NotImplementedError("I'm still working on the case "
             +"where this is connected to something!!!")

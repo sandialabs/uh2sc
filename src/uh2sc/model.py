@@ -5,11 +5,11 @@ from warnings import warn
 import numpy as np
 
 from uh2sc import validator
-from uh2sc.errors import InputFileError
+from uh2sc.errors import InputFileError, NewtonSolverError
 from uh2sc.solvers import NewtonSolver
-from uh2sc.abstract import AbstractComponent
+from uh2sc.abstract import AbstractComponent, ComponentTypes
 from uh2sc.hdclass import ImplicitEulerAxisymmetricRadialHeatTransfer
-import jax.numpy as jnp
+
 
 
 ADJ_COMP_TESTING_NAME = "testing"
@@ -63,14 +63,15 @@ class Model(AbstractComponent):
             num_wells = 0
             # each component type has a single component test mode to assure
             # it can solve a simple case that does not include the other parts
-            if kwargs["type"] == "ghe":
+            if kwargs["type"] == ComponentTypes(2).name:
                 num_ghes = 1
-            elif kwargs["type"] == "cavern":
+            elif kwargs["type"] == ComponentTypes(4).name:
                 num_caverns = 1
-            elif kwargs["type"] == "well":
+            elif kwargs["type"] == ComponentTypes(3).name:
                 num_wells = 1
             else:
-                raise ValueError("Only valid kwargs['type']: ghe, cavern, well")
+                raise ValueError(f"Only valid kwargs['type']:" 
+                        +f"{' '.join([ct.name for ct in ComponentTypes])}")
 
 
         self._build(num_caverns,num_wells,num_ghes)
@@ -88,15 +89,33 @@ class Model(AbstractComponent):
     @property
     def solutions(self):
         return self._solutions
+    
+    @property
+    def component_type(self):
+        return "model"
 
     def run(self):
         for time in self.times:
-            self.solver.solve(self)
             
-            # gather the results
-            self._solutions[time] = {}
-            for cname, component in self.components.items():
-                self._solutions[time][cname] = component.get_x()
+            # solve the current time step
+            tup = self.solver.solve(self)
+            
+            solver_converged = bool(tup[0])
+            if solver_converged:
+                # update the state of the model
+                for cname, component in self.components.items():
+                    if component.component_type == ComponentTypes(2).name:
+                        component.shift_solution()
+                
+                # gather the results
+                self._solutions[time] = {}
+                for cname, component in self.components.items():
+                    self._solutions[time][cname] = component.get_x()
+            
+            else:
+                msg = tup[1]
+                raise NewtonSolverError("The Newton solver returned an" 
+                        +f" error for time {time}: {msg}")
 
 
     @property

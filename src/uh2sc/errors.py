@@ -13,3 +13,6 @@ class MassTooLow(Exception):
 
 class InputFileError(ValueError):
     pass
+
+class NewtonSolverError(Exception):
+    pass
