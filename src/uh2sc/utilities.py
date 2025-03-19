@@ -8,6 +8,10 @@ Created on Wed Jan 17 15:05:14 2024
 import os
 from warnings import warn
 
+import numpy as np
+
+from CoolProp import CoolProp as CP
+
 def filter_cpu_count(cpu_count):
     """
     Filters the number of cpu's to use for parallel runs such that
@@ -65,3 +69,38 @@ def process_CP_gas_string(matstr):
         compSRK = matstr
 
     return comp, molefracs, compSRK
+
+def cavern_initial_mass_flows(inputs,time):
+        # calculate the molefractions
+    mass_flows = np.array([[inputs["wells"][wname]["valves"][vname]["mdot"][0]
+                       for vname, valve in well["valves"].items()]
+                     for wname, well in inputs["wells"].items()])
+    total_mass_flow = mass_flows.sum()
+    
+    
+    fluids = {}
+    
+    for wname, well in inputs["wells"].items():
+        for vname, valve in well["valves"].items():
+            cp_mat_str = inputs["wells"][wname]["valves"][vname]["reservoir"]["fluid"]
+            pressure = inputs["wells"][wname]["valves"][vname]["reservoir"]["pressure"]
+            temperature = inputs["wells"][wname]["valves"][vname]["reservoir"]["temperature"]
+            
+            chem_comp, molefracs, compSRK = process_CP_gas_string(cp_mat_str)
+            
+            fluid = CP.AbstractState("HEOS", chem_comp)
+            fluid.specify_phase(CP.iphase_gas)
+            fluid.set_mole_fractions(molefracs)
+            fluid.update(CP.PT_INPUTS, pressure, temperature)
+            
+            MW = fluid.molar_mass()
+            
+            
+    
+    mass_frac = mass_flows/total_mass_flow
+    
+    
+    
+    
+    return []
+

@@ -3,12 +3,7 @@ cavern:
   overburden_pressure: 19829198.656747766 # Pascal:  Approximately 1000 m deep overburden pressure
   height: 304.8 # meters
   diameter: 25.76033180350307 # meters
-  salt_thickness: 100.0 # The "vessel" is now a layer of salt that is modeled  
-  salt_heat_capacity: 837.2 #J/kg/K salt heat capacity
-  salt_density: 2162.4925554846 # kg/m3 salt density 
-  salt_thermal_conductivity: 5.190311418685122 # W/m/K see https://doi.org/10.1016/j.renene.2021.11.080 for examples this is for 100 C
-  salt_farfield_temperature: 317.5944444444444 # Kelvin
-  distance_to_farfield_temp: 600.0 # meters
+  ghe_name: nielson_ghe
 wells:  # an arbitrary number of wells can be defined that can pull and push different gasses into the well simultaneously
         # each well can have multiple pipes such that a single well can inject and withdraw at the same time.
   cavern_well:
@@ -22,21 +17,34 @@ wells:  # an arbitrary number of wells can be defined that can pull and push dif
     valves: # must have same number of valves as pipe_lengths (every pipe ends in a valve)
       inflow_mdot:
         type: "mdot"
-        time: [0.0, 2628000.0]     # THIS WILL BE REPLACED BY THE CODE
-        mdot: [13.0196,13.0196]    # THIS WILL BE REPLACED BY THE CODE
+        time: [0.0,       864000.0, 864000.01,1728000.0, 1728000.01,2592000.0, 2592000.01, 2628000.0]     # THIS WILL BE REPLACED BY THE CODE
+        mdot: [-1.484567 ,-1.484567,1.484567, 1.484567,  -1.484567, -1.484567, 0.0,        0.0 ]    # THIS WILL BE REPLACED BY THE CODE
         reservoir:
           pressure: 8000000.0
           temperature: 310.92777777777777775
           fluid: 'H2'
+ghes:
+  nielson_ghe:
+    distance_to_farfield_temp: 600.0 # meters - calibration term
+    density: 2162.4925554846 # kg/m3 salt density
+    farfield_temperature: 317.5944444444444 # Kelvin
+    heat_capacity: 837.2 #J/kg/K salt heat capacity
+    thermal_conductivity: 5.190311418685122 # W/m/K see https://doi.org/10.1016/j.renene.2021.11.080 
+                                            #for examples this is for 100 C
+    modeled_radial_thickness: 100.0 # The "vessel" is now a layer of salt that is modeled
+    initial_conditions:
+      Q0: 0.0
+      Qend: 0.0
+    number_elements: 400
 initial:  # IN THIS EXAMPLE, THESE ARE OVERWRITTEN FOR SEVERAL DIFFERENT RUNS!
   temperature: 326.5
   pressure: 9000000.0 #Pascal
   fluid: "H2" 
   start_date: "2023-01-01" # Must be in iso format "YYYY-MM-DD"
+  liquid_height: 0.0
 calculation:
   time_step: 300.0 # seconds 
   end_time: 1.0 # This will change by code input!
   run_parallel: false
 heat_transfer:
-  number_radial_elements: 400 # for 1-D radial heat transfer
   h_inner: "calc" # can enter a constant value if needed.

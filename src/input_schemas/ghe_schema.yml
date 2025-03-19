@@ -28,16 +28,20 @@ modeled_radial_thickness:
   required: true
   type: number
 initial_conditions:
-  Q0:
-    min: -50e12
-    max: 50e12
-    required: true
-    type: number
-  Qend:
-    min: -50e12
-    max: 50e12
-    required: true
-    type: number
+  allow_unknown: false
+  required: true
+  schema:
+    Q0:
+      max: 50000000000000.0
+      min: -50000000000000.0
+      required: true
+      type: number
+    Qend:
+      max: 50000000000000.0
+      max: 50000000000000.0
+      required: true
+      type: number
+  type: dict
 number_elements:
   min: 1
   max: 100000

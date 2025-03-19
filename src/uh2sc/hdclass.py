@@ -253,7 +253,8 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
 
 class HydDown:
     """
-    Main class to to hold problem definition, running problem, storing results etc.
+    Houses the cavern calculations and was originally the HydDown software.
+    Extensive changes have been made though.
     """
     def __init__(self, inp):
         """
@@ -266,7 +267,7 @@ class HydDown:
         #TODO - move fault analytics option to the input structure
         self.include_fault_analytics = True
         self.anomaly_factor = 20
-        self.input = inp
+        self.inputs = inp
         self.verbose = 0
         self.isrun = False
         self.read_input()
@@ -277,37 +278,51 @@ class HydDown:
         Reading in input/ problem definition dict and assigning to classs
         attributes.
         """
-        self.length = self.input["cavern"]["height"]
-        self.diameter = self.input["cavern"]["diameter"]
+        if "ghe_name" in self.inputs["cavern"]:
+            ghe_name = self.inputs["cavern"]["ghe_name"]
+            self.has_ghe = True
+        else:
+            ghe_name = ""
+            self.has_ghe = False
+            
+        self.length = self.inputs["cavern"]["height"]
+        self.diameter = self.inputs["cavern"]["diameter"]
 
-        self.p0 = self.input["initial"]["pressure"]
-        self.T0 = self.input["initial"]["temperature"]
-        self.Tv0 = self.input["cavern"]["salt_farfield_temperature"]
-        self.species = "HEOS::" + self.input["initial"]["fluid"]
+        self.p0 = self.inputs["initial"]["pressure"]
+        self.T0 = self.inputs["initial"]["temperature"]
+        
+        if self.has_ghe:
+            self.Tv0 = self.inputs["ghes"][ghe_name]["farfield_temperature"]
+        else:
+            # perfectly insulated.
+            self.Tv0 = self.inputs["cavern"]["temperature"]
+        self.species = "HEOS::" + self.inputs["initial"]["fluid"]
 
         # Detects if a multi component fluid is specified using & for separation of components
-        comp, molefracs, compSRK = process_CP_gas_string(self.input["initial"]["fluid"])
+        comp, molefracs, compSRK = process_CP_gas_string(self.inputs["initial"]["fluid"])
         self.comp = comp
         self.molefracs = molefracs
         self.compSRK = compSRK
 
 
-        self.tstep = self.input["calculation"]["time_step"]
-        self.time_tot = self.input["calculation"]["end_time"]
-        self.salt_thickness = self.input["cavern"]["salt_thickness"]
-        self.h_in = self.input["heat_transfer"]["h_inner"]
+        self.tstep = self.inputs["calculation"]["time_step"]
+        self.time_tot = self.inputs["calculation"]["end_time"]
+        
+        if self.has_ghe:        
+            self.salt_thickness = self.inputs["ghes"][ghe_name]["modeled_radial_thickness"]
+        self.h_in = self.inputs["heat_transfer"]["h_inner"]
 
         # Reading well-specific data
         #self.wells = {}
-        #for wname, well in self.input["wells"].items():
+        #for wname, well in self.inputs["wells"].items():
         #    self.wells[wname] = Well(well, self.p0, self.T0, self.molefracs, self.comp)
 
         self._prepare_for_parallel()
 
     def _prepare_for_parallel(self):
 
-        if "run_parallel" in self.input["calculation"]:
-            self._run_parallel = self.input["calculation"]["run_parallel"]
+        if "run_parallel" in self.inputs["calculation"]:
+            self._run_parallel = self.inputs["calculation"]["run_parallel"]
             if self._run_parallel:
                 import multiprocessing as mp
                 # MANUAL
@@ -331,7 +346,7 @@ class HydDown:
         instantiating arrays for storing time-dependent results, setting additional
         required class attributes.
         """
-        inp = self.input
+        inp = self.inputs
 
         self.time_tot = inp["calculation"]["end_time"]
         if not self.isrun:
@@ -367,16 +382,17 @@ class HydDown:
             referencePT_rho_H2 = 0.08527
             self.min_mass = self.vol * referencePT_rho_H2
 
+            # THESE CONNECTIONS ARE NOW MOVED TO THE MODEL class level.
             # add on for salT_cavern_wall
-            self.axsym = ExplicitAxisymmetricRadialHeatTransfer(r_cavern=self.diameter/2.0,
-                                                   kg=inp["cavern"]["salt_thermal_conductivity"],
-                                                   rhog=inp["cavern"]["salt_density"],
-                                                   cpg=inp["cavern"]["salt_heat_capacity"],
-                                                   length_component=self.length,
-                                                   number_elements=inp["heat_transfer"]["number_radial_elements"],
-                                                   dist_next_cavern_wall=self.diameter/2.0 + self.salt_thickness,
-                                                   Tg=inp["cavern"]["salt_farfield_temperature"],
-                                                   dist_to_Tg_reservoir=inp["cavern"]["distance_to_farfield_temp"])
+            # self.axsym = ImplicitEulerAxisymmetricRadialHeatTransfer(r_cavern=self.diameter/2.0,
+            #                                        kg=inp["cavern"]["salt_thermal_conductivity"],
+            #                                        rhog=inp["cavern"]["salt_density"],
+            #                                        cpg=inp["cavern"]["salt_heat_capacity"],
+            #                                        length_component=self.length,
+            #                                        number_elements=inp["heat_transfer"]["number_radial_elements"],
+            #                                        dist_next_cavern_wall=self.diameter/2.0 + self.salt_thickness,
+            #                                        Tg=inp["cavern"]["salt_farfield_temperature"],
+            #                                        dist_to_Tg_reservoir=inp["cavern"]["distance_to_farfield_temp"])
 
             self.rho0 = self.fluid.rhomass() #PropsSI("D", "T", self.T0, "P", self.p0, self.species)
             self.m0 = self.rho0 * self.vol
@@ -540,7 +556,7 @@ class HydDown:
             T_film = (self.T_cavern[i - 1]+self.T_cavern_wall[i - 1])/2
             self.transport_fluid.update(CP.PT_INPUTS, self.P_cavern[i-1], T_film)
 
-            if self.total_mass_rate[i] > 0.0: #if self.input["valve"]["flow"] == "filling":
+            if self.total_mass_rate[i] > 0.0: #if self.inputs["valve"]["flow"] == "filling":
                # TODO - REmOVE : this should be the same but I have it this way for direct verification
                # that I have not made any changes.
                hi = tp.h_inside_mixed(L, self.T_cavern_wall[i-1], self.T_cavern[i-1], self.transport_fluid, self.total_mass_rate[i-1], self.diameter)
@@ -553,7 +569,7 @@ class HydDown:
 
     def _total_mass_rate(self,i):
         val = np.array([[self.mass_rate[wname][vname][i] for vname, valve in well["valves"].items()]
-                for wname, well in self.input["wells"].items()]).sum()
+                for wname, well in self.inputs["wells"].items()]).sum()
         if isinstance(val,np.ndarray):
             val = val.sum()
         return val
@@ -754,7 +770,7 @@ class HydDown:
 
 
     def _mass_rate(self,i):
-        inp = self.input
+        inp = self.inputs
 
         # specific heats ratio for mass rates.
         cpcv = self.fluid.cp0molar() / (self.fluid.cp0molar() - Constants.Rg['value'])

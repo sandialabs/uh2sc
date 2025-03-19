@@ -4,11 +4,15 @@
 from warnings import warn
 import numpy as np
 
+import CoolProp.CoolProp as CP
+
 from uh2sc import validator
 from uh2sc.errors import InputFileError, NewtonSolverError
 from uh2sc.solvers import NewtonSolver
 from uh2sc.abstract import AbstractComponent, ComponentTypes
 from uh2sc.hdclass import ImplicitEulerAxisymmetricRadialHeatTransfer
+from uh2sc.utilities import process_CP_gas_string, cavern_initial_mass_flows
+from uh2sc.salt_cavern import SaltCavern
 
 
 
@@ -272,12 +276,12 @@ class Model(AbstractComponent):
                 if name == "diameter":
                     name = "pipe_diameters"
                 if arrind is None:
-                    val = np.max(val,adjacent_comp[name]*multfact)
+                    val = np.max(np.array([val,adjacent_comp[name]*multfact]))
                 else:
-                    val = np.max(val, adjacent_comp[name][arrind]*multfact)
+                    val = np.max(np.array([val, adjacent_comp[name][arrind]*multfact]))
 
             else:
-                val = np.max(val,adjacent_comp[name]*multfact)
+                val = np.max(np.array([val,adjacent_comp[name]*multfact]))
 
         return val
 
@@ -339,7 +343,7 @@ class Model(AbstractComponent):
                                                             1.0)
                 # set the constant time step
 
-                t_step = self.inputs["calculations"]["time_step"]
+                t_step = self.inputs["calculation"]["time_step"]
 
 
 
@@ -378,9 +382,43 @@ class Model(AbstractComponent):
                   global_indices=(beg_idx,end_idx))
 
 
-
     def _build_cavern(self,x_desc,xg,components):
-        pass
+        """
+        Build the cavern (no multi-cavern capability yet!)
+        
+        """
+        cavern = self.inputs["cavern"]
+        beg_idx = len(xg)
+        
+        # add all cavern variables
+        x_desc += ["Cavern temperature (K)"]
+        xg += [self.inputs["initial"]["temperature"]]
+        x_desc += ["Cavern wall temperature (K)"]
+        xg += [self.inputs["initial"]["temperature"]]
+        x_desc += ["Cavern pressure (Pa)"]
+        xg += [self.inputs["initial"]["pressure"]]
+        x_desc += ["Cavern liquid height (1.0 scale for cavern height)"]
+        xg += [self.inputs["initial"]["liquid_height"]]
+        x_desc += ["Cavern mass flow in (+) or out (-) (kg/s)"]
+        # you need a function that sums all of the valves associated with all
+        # wells connected to the cavern.
+        inflow_molefracs = cavern_initial_mass_flows(self.inputs, 0.0)
+        
+        xg += []
+        x_desc += ["Cavern input gas mole"]
+        
+        end_idx = len(xg)-1  # minus one because of 0 indexing!
+        
+            
+        gasses, molefracs, compSRK = process_CP_gas_string(self.inputs["initial"]["fluid"])
+        
+        for molefrac,gas in zip(molefracs,gasses):
+            x_desc += [f"{gas} mole fraction"]
+            xg += [molefrac]
+        
+        
+        components["cavern"] = SaltCavern(self.inputs,global_indices=(beg_idx,end_idx))
+        
 
     def _build_wells(self,x_desc,xg,components):
         pass
@@ -398,7 +436,7 @@ class Model(AbstractComponent):
         ValueError
             If missing input is detected.
         """
-        valid_tup = validator.validation(self.input)
+        valid_tup = validator.validation(self.inputs)
         vobjs = valid_tup[1]
         valid_test = valid_tup[0]
         invalid = False
@@ -415,7 +453,7 @@ class Model(AbstractComponent):
         if invalid:
             raise InputFileError("Error in input file:\n\n" + error_string)
 
-    def _read_input(self,inp):
+    def (self,inp):
             # enable reading a file or accepting a valid dictionary
         if isinstance(inp,str):
             with open(inp,'r',encoding='utf-8') as infile:
@@ -436,8 +474,9 @@ class Model(AbstractComponent):
         """
         adj_comp = []
         for wname, well in self.inputs["wells"].items():
-            if well["ghe_name"] == ghe_name:
-                adj_comp.append(wname,well)
+            if "ghe_name" in well:
+                if well["ghe_name"] == ghe_name:
+                    adj_comp.append((wname,well))
         if ghe_name == self.inputs["cavern"]["ghe_name"]:
-            adj_comp.append("cavern",cavern)
+            adj_comp.append(("cavern",self.inputs["cavern"]))
         return adj_comp

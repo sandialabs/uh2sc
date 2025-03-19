@@ -39,32 +39,21 @@ cavern:
       required: true
       type: number
     ghe_name:
-      type: str
-      required: true
+      type: string
+      required: false #perfectly insulated if none exists.
   type: dict
 heat_transfer:
   allow_unknown: false
   allowed:
   - h_inner
-  - D_throat
-  - number_radial_elements
   required: false
   schema:
-    D_throat:
-      min: 0
-      required: false
-      type: number
     h_inner:
       check_with: h_inner_check
       required: true
       type:
       - number
       - string
-    number_radial_elements:
-      max: 100000
-      min: 1
-      required: true
-      type: integer
   type: dict
 initial:
   allow_unknown: false
@@ -77,6 +66,8 @@ initial:
     pressure:
       required: true
       type: number
+      max: 10000000000
+      min: 100000
     start_date:
       check_with: is_isocalendardate
       required: false
@@ -84,6 +75,13 @@ initial:
     temperature:
       required: true
       type: number
+      max: 5000.0
+      min: 273.0
+    liquid_height:
+      required: true
+      type: number
+      max: 1.0
+      min: 0.0
   type: dict
 wells:
   allow_unknown: true

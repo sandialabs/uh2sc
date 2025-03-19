@@ -7,8 +7,8 @@ Created on Wed Oct 18 17:20:21 2023
 import pandas as pd
 import yaml
 
-from .abstract import AbstractComponent
-from .hdclass import HydDown
+from uh2sc.abstract import AbstractComponent
+from uh2sc.hdclass import HydDown
 
 
 class SaltCavern(AbstractComponent, HydDown):
@@ -43,9 +43,12 @@ class SaltCavern(AbstractComponent, HydDown):
     def __str__(self):
         return "Salt Cavern Object"
 
-    def __init__(self,input_dict):
+    def __init__(self,input_dict,global_indices):
         # this includes validation of the input dictionary which must follow
         # the main schema in validatory.py
+        # do stuff relevant to model
+        self._gindices = global_indices
+        
         super().__init__(input_dict)
 
         self.first_step = True
@@ -111,8 +114,62 @@ class SaltCavern(AbstractComponent, HydDown):
         self.step_num += 1
 
         return self.T_cavern_wall[-1], self.T_cavern[-1]
-
-
-
+    
+    
     def output_df(self):
         return pd.DataFrame(self.cavern_results)
+
+
+    # METHODS NEEDING DEFINITIONS FROM THE AbstractComponent super-class
+    @property
+    def global_indices(self):
+        """
+        This property must give the indices that give the begin and end location
+        in the global variable vector (xg)
+        """
+        return self._gindices
+
+    @property
+    def previous_adjacent_components(self):
+        """
+        Interface variable indices for the previous component
+        """
+        pass
+
+    @property
+    def next_adjacent_components(self):
+        """
+        interface variable indices for the next component
+        """
+        
+    @property
+    def component_type(self):
+        """
+        A string that allows the user to identify what kind of component 
+        this is so that specific properties and methods can be invoked
+
+        """
+
+
+    def evaluate_residuals(self,x=None):
+        """
+        Must first evaluate all interface equations for indices produced by interface_var_ind_prev_comp
+
+        Then must evaluate all internal component equations
+
+
+        Args:
+            xg numpy.array : global x vector for the entire
+                             differiental/algebraic system
+        """
+        breakpoint()
+
+
+    def get_x(self):
+        pass
+
+
+    def load_var_values_from_x(self,xg):
+        pass
+
+

@@ -18,6 +18,7 @@ import yaml
 
 from CoolProp.CoolProp import PropsSI
 from uh2sc import SaltCavern
+from uh2sc.model import Model
 
 def prepare_csv_data(nonleapyear,filename):
     df = pd.read_csv(filename,names=["day of year","degrees fahrenheit"],dtype=float)
@@ -260,11 +261,13 @@ class TestSaltCavernVerification(unittest.TestCase):
 
         """
         This test takes ~200-300 seconds and is a validation test that compares
-        to Nielson's model results for a salt cavern.
+        to Nielson's model results for a salt cavern. It is the case where
+        the well heat transfer and dynamics are considered to be negligible.
 
         """
 
         if self.run_all:
+            
 
             con = Constants()
 
@@ -312,6 +315,12 @@ class TestSaltCavernVerification(unittest.TestCase):
 
                     mass_max = rho_max_pressure * self.nielson_obj.cavern_volume
                     mass_min = rho_min_pressure * self.nielson_obj.cavern_volume
+                    
+                    breakpoint()
+                    # HERE IS WHERE I LEFT OFF. THIS routine is specifying mass flow in
+                    # in a way that should probably just be put in the input file
+                    # We want to move away from a lot of custom stuff happening 
+                    # here and to have correct values in the actual input file
 
                     # calculate mass flow needed.
                     mdot = -(mass_max - mass_min) / (end_time)
@@ -326,8 +335,11 @@ class TestSaltCavernVerification(unittest.TestCase):
                     inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["mdot"] = [
                         mdot for idx in range(nstep+1)]
 
+                    # create model object
+                    model = Model(inp)
+
                     # create salt caver object
-                    sc = SaltCavern(inp)
+                    # sc = SaltCavern(inp)
                     # """
                     # RUN
                     # """
@@ -335,12 +347,12 @@ class TestSaltCavernVerification(unittest.TestCase):
                     for i in range(int(con.days_per_year/days_per_cycle)):
                         if self.print_msg:
                             print(i)
+                        
+                        model.run()
+                        cycle_flow_commands(model)
 
-                        sc.step()
-                        cycle_flow_commands(sc)
-
-                        sc.step()
-                        cycle_flow_commands(sc)
+                        model.run()
+                        cycle_flow_commands(model)
 
                     v_df = create_df_from_sim_output(con.nonleapyear, sc.cavern_results)
 

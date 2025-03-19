@@ -283,7 +283,7 @@ def validation(inp):
         validate_dict[gname] = Validator(schemas["ghe_schema"])
         if isinstance(ghe,dict):
             # validate ghe in general
-            ret_val[gname] = validate_dict[gname].validate(ghe)
+            retval[gname] = validate_dict[gname].validate(ghe)
         else:
             gname_dict_err = gname +"_dictionary_error"
             validate_dict[gname_dict_err] = _LocalErrorObj()
@@ -303,13 +303,14 @@ def validation(inp):
                    + f"exist, the defined names for GHEs is: {gnames}")
 
     for name,well in inp["wells"].items():
-        if inp["wells"][name]["ghe_name"] not in gnames:
-            well_ghe_name = f"well_{name}_ghe_name"
-            validate_dict[well_ghe_name] = _LocalErrorObj()
-            retval[well_ghe_name] = validate_dict[well_ghe_name].validate(
-                          f"The well `{name}` ground heat exchanger"
-                        + f"(GHE) name `{inp["wells"][name]["ghe_name"]}` does not"
-                        + f"exist, the defined names for GHEs is: {gnames}")
+        if "ghe_name" in inp["wells"][name]:
+            if inp["wells"][name]["ghe_name"] not in gnames:
+                well_ghe_name = f"well_{name}_ghe_name"
+                validate_dict[well_ghe_name] = _LocalErrorObj()
+                retval[well_ghe_name] = validate_dict[well_ghe_name].validate(
+                              f"The well `{name}` ground heat exchanger"
+                            + f"(GHE) name `{inp["wells"][name]["ghe_name"]}` does not"
+                            + f"exist, the defined names for GHEs is: {gnames}")
 
 
 

@@ -41,6 +41,7 @@ class AbstractComponent(ABC):
         """
         interface variable indices for the next component
         """
+        pass
         
     @property
     @abstractmethod
@@ -50,6 +51,7 @@ class AbstractComponent(ABC):
         this is so that specific properties and methods can be invoked
 
         """
+        pass
 
     @abstractmethod
     def evaluate_residuals(self,x=None):
@@ -76,6 +78,9 @@ class AbstractComponent(ABC):
     def evaluate_jacobian(self,x=None):
         # must do this numerically and we follow the same routine
         if False:
+            # TODO: look into impelmenting an efficient sparse
+            # Jacobian or even implementing a sparse Jacobian 
+            # algorithm in Cython.
             if x is None:
                 x = self.get_x()
                 
