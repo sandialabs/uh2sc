@@ -288,52 +288,56 @@ class TestSaltCavernVerification(unittest.TestCase):
                 days_per_cycle_list = subd["days_per_cycle"]
 
                 for days_per_cycle in days_per_cycle_list:
+
+                    # THIS IS NO LONGER USED BUT I HAVE LEFT IT HERE 
+                    # SO THAT YOU CAN SEE HOW I DETERMINED THE MASS RATE
+                    # NEEDED.
                     #Prep inputs
 
-                    # establish simulation time parameters
-                    end_time = (1/3) * con.seconds_per_hour * con.hours_per_day * days_per_cycle
-                    nstep = end_time / con.tstep
-                    if np.floor(nstep) != nstep:
-                        raise ValueError("You must make the cavern_time_step"
-                                         +" an integer multiple of the tstep!")
-                    else:
-                        nstep = int(nstep)
-                    inp["calculation"]["end_time"] = end_time
+                    # # establish simulation time parameters
+                    # end_time = (1/3) * con.seconds_per_hour * con.hours_per_day * days_per_cycle
+                    # nstep = end_time / con.tstep
+                    # if np.floor(nstep) != nstep:
+                    #     raise ValueError("You must make the cavern_time_step"
+                    #                      +" an integer multiple of the tstep!")
+                    # else:
+                    #     nstep = int(nstep)
+                    # inp["calculation"]["end_time"] = end_time
 
-                    # read verification dataset from Nielson
-                    filename = subd['file'][days_per_cycle]
-                    verify_obj = prepare_csv_data(con.nonleapyear,os.path.join(
-                       os.path.dirname(__file__),"test_data",filename))
+                    # # read verification dataset from Nielson
+                    # filename = subd['file'][days_per_cycle]
+                    # verify_obj = prepare_csv_data(con.nonleapyear,os.path.join(
+                    #    os.path.dirname(__file__),"test_data",filename))
 
-                    temp_max_pressure = fahrenheit_to_kelvin(verify_obj["degrees fahrenheit"].max())
-                    temp_min_pressure = fahrenheit_to_kelvin(verify_obj["degrees fahrenheit"].min())
+                    # temp_max_pressure = fahrenheit_to_kelvin(verify_obj["degrees fahrenheit"].max())
+                    # temp_min_pressure = fahrenheit_to_kelvin(verify_obj["degrees fahrenheit"].min())
 
-                    rho_max_pressure = PropsSI('D','T',temp_max_pressure,
-                                               'P',self.nielson_obj.max_avg_pressure,gas_type)
-                    rho_min_pressure = PropsSI('D','T',temp_min_pressure,
-                                               'P',self.nielson_obj.min_avg_pressure,gas_type)
+                    # rho_max_pressure = PropsSI('D','T',temp_max_pressure,
+                    #                            'P',self.nielson_obj.max_avg_pressure,gas_type)
+                    # rho_min_pressure = PropsSI('D','T',temp_min_pressure,
+                    #                            'P',self.nielson_obj.min_avg_pressure,gas_type)
 
-                    mass_max = rho_max_pressure * self.nielson_obj.cavern_volume
-                    mass_min = rho_min_pressure * self.nielson_obj.cavern_volume
+                    # mass_max = rho_max_pressure * self.nielson_obj.cavern_volume
+                    # mass_min = rho_min_pressure * self.nielson_obj.cavern_volume
                     
-                    breakpoint()
-                    # HERE IS WHERE I LEFT OFF. THIS routine is specifying mass flow in
-                    # in a way that should probably just be put in the input file
-                    # We want to move away from a lot of custom stuff happening 
-                    # here and to have correct values in the actual input file
+                    # breakpoint()
+                    # # HERE IS WHERE I LEFT OFF. THIS routine is specifying mass flow in
+                    # # in a way that should probably just be put in the input file
+                    # # We want to move away from a lot of custom stuff happening 
+                    # # here and to have correct values in the actual input file
 
-                    # calculate mass flow needed.
-                    mdot = -(mass_max - mass_min) / (end_time)
-                    # 30e6 Pa is approximately 1000 m deep overburden pressure
-                    inp["initial"]["pressure"] = self.nielson_obj.max_avg_pressure
-                    inp["initial"]["fluid"] = gas_type
-                    inp['initial']['temperature'] = subd['initial_temperatures'][days_per_cycle]
+                    # # calculate mass flow needed.
+                    # mdot = -(mass_max - mass_min) / (end_time)
+                    # # 30e6 Pa is approximately 1000 m deep overburden pressure
+                    # inp["initial"]["pressure"] = self.nielson_obj.max_avg_pressure
+                    # inp["initial"]["fluid"] = gas_type
+                    # inp['initial']['temperature'] = subd['initial_temperatures'][days_per_cycle]
 
-                    # this just takes single steps
-                    inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["time"] = [
-                        con.tstep*idx for idx in range(nstep+1)]
-                    inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["mdot"] = [
-                        mdot for idx in range(nstep+1)]
+                    # # this just takes single steps
+                    # inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["time"] = [
+                    #     con.tstep*idx for idx in range(nstep+1)]
+                    # inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["mdot"] = [
+                    #     mdot for idx in range(nstep+1)]
 
                     # create model object
                     model = Model(inp)

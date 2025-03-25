@@ -16,3 +16,12 @@ class InputFileError(ValueError):
 
 class NewtonSolverError(Exception):
     pass
+
+class FluidStrBracketError(ValueError):
+    pass
+
+class FluidStrNumberError(ValueError):
+    pass
+
+class FluidStrNumbersDoNotAddToOneError(ValueError):
+    pass

@@ -299,7 +299,7 @@ class HydDown:
         self.species = "HEOS::" + self.inputs["initial"]["fluid"]
 
         # Detects if a multi component fluid is specified using & for separation of components
-        comp, molefracs, compSRK = process_CP_gas_string(self.inputs["initial"]["fluid"])
+        comp, molefracs, compSRK, fluid = process_CP_gas_string(self.inputs["initial"]["fluid"])
         self.comp = comp
         self.molefracs = molefracs
         self.compSRK = compSRK

@@ -172,7 +172,14 @@ def validation(inp):
                     error(field,"The fluid string has an illegal entry={co}."+
                           "Permissible entries for CoolProps are:\n\n"+
                           str(allowed_gas_species))
-                    return
+
+                
+    def time_step_less_than_end_time(field,value,error):
+        end_time = inp['calculation']["end_time"]
+        
+        if end_time < value:
+            error(field, "The time_step cannot be greater than the end time!")
+        
 
 
 
@@ -186,7 +193,8 @@ def validation(inp):
                   "check_pipe_conductivities":check_pipe_conductivities,
                   "check_pipe_roughness":check_pipe_roughness,
                   "check_pipe_minor_loss_coef":check_pipe_minor_loss_coef,
-                  "fluid_string_check":fluid_string_check}
+                  "fluid_string_check":fluid_string_check,
+                  "time_step_less_than_end_time":time_step_less_than_end_time}
 
     def _add_check_with_functions(schema,dispatcher):
         # recursive function

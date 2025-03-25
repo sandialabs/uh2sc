@@ -8,6 +8,7 @@ calculation:
       required: true
       type: number
     time_step:
+      check_with: time_step_less_than_end_time
       max: 86400
       min: 0.01
       required: true

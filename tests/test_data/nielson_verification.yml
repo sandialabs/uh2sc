@@ -9,7 +9,7 @@ wells:  # an arbitrary number of wells can be defined that can pull and push dif
   cavern_well:
     ideal_pipes: true  # override everything else such that there are no energy losses along the pipes.
     control_volume_length: 1304.8
-    pipe_lengths: [1304.8] # meters must be 
+    pipe_lengths: [1304.8] # meters must be
     pipe_diameters: [0.0,0.0,0.1,0.12] # meters
     pipe_thermal_conductivities: [45] # W/m/K
     pipe_roughness_ratios: [0.000]  # ratio of pipe diameter to roughness height
@@ -29,7 +29,7 @@ ghes:
     density: 2162.4925554846 # kg/m3 salt density
     farfield_temperature: 317.5944444444444 # Kelvin
     heat_capacity: 837.2 #J/kg/K salt heat capacity
-    thermal_conductivity: 5.190311418685122 # W/m/K see https://doi.org/10.1016/j.renene.2021.11.080 
+    thermal_conductivity: 5.190311418685122 # W/m/K see https://doi.org/10.1016/j.renene.2021.11.080
                                             #for examples this is for 100 C
     modeled_radial_thickness: 100.0 # The "vessel" is now a layer of salt that is modeled
     initial_conditions:
@@ -39,12 +39,12 @@ ghes:
 initial:  # IN THIS EXAMPLE, THESE ARE OVERWRITTEN FOR SEVERAL DIFFERENT RUNS!
   temperature: 326.5
   pressure: 9000000.0 #Pascal
-  fluid: "H2" 
+  fluid: "H2"
   start_date: "2023-01-01" # Must be in iso format "YYYY-MM-DD"
   liquid_height: 0.0
 calculation:
-  time_step: 300.0 # seconds 
-  end_time: 1.0 # This will change by code input!
+  time_step: 300.0 # seconds
+  end_time: 2628000.0 # This will change by code input!
   run_parallel: false
 heat_transfer:
   h_inner: "calc" # can enter a constant value if needed.

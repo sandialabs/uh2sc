@@ -410,14 +410,16 @@ class Model(AbstractComponent):
         end_idx = len(xg)-1  # minus one because of 0 indexing!
         
             
-        gasses, molefracs, compSRK = process_CP_gas_string(self.inputs["initial"]["fluid"])
+        gasses, molefracs, compSRK, fluid = process_CP_gas_string(
+            self.inputs["initial"]["fluid"])
         
         for molefrac,gas in zip(molefracs,gasses):
             x_desc += [f"{gas} mole fraction"]
             xg += [molefrac]
         
         
-        components["cavern"] = SaltCavern(self.inputs,global_indices=(beg_idx,end_idx))
+        components["cavern"] = SaltCavern(self.inputs,global_indices=
+                                          (beg_idx,end_idx))
         
 
     def _build_wells(self,x_desc,xg,components):
@@ -453,7 +455,7 @@ class Model(AbstractComponent):
         if invalid:
             raise InputFileError("Error in input file:\n\n" + error_string)
 
-    def (self,inp):
+    def _read_input(self,inp):
             # enable reading a file or accepting a valid dictionary
         if isinstance(inp,str):
             with open(inp,'r',encoding='utf-8') as infile:
