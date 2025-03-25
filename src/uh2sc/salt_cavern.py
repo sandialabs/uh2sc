@@ -29,6 +29,67 @@ class SaltCavern(AbstractComponent, HydDown):
 
     Variables:
     ==========
+    
+    t_gas = The equilibrium gas temperature of a continuously varying
+               mixture of gasses.
+    t_gas_wall = The temperature at the salt cavern wall (connected to the
+               axisymmetric heat transfer)
+    p_gas = the average gas pressure in the cavern 
+    
+    mass_gas = The total mass of gas in the cavern
+    
+    molefrac[ngas] = The molefractions of the gas in the cavern (gas species include 
+               all types included in the input file)
+    
+    mass_flux_gas[nwell][ngas] = for each well, the gas flux of each gas species 
+               in kg/s (wells below liquid can only pull and push liquid)
+    
+    t_cavern_liquid = The equilibrium liquid temperature at the bottom of the 
+               salt cavern
+    t_cavern_liquid_wall = The equilibrium salt wall temperature at the bottom 
+               of the salt cavern
+               
+    NOTE: for now, the fluid salinity is the only attribute that is allowed to
+          vary. The size of the cavern doesn't change (i.e., solution mining
+          is not modeled)
+    
+    mass_liquid - the mass of the fluid present in the cavern
+    
+    molefrac_liquid[2] - the molefractions of fluid contituents (water, salt in solution)
+    
+    mass_flux_liquid[nwell][ngas] = for each well, the liquid flux of each liquid species
+              in kg/s (wells above liquid cna only pull and push gas)
+              
+    Equations
+    
+    Aximsymmetric heat transfer (1) - flux from cavern = flux into ground
+    conservation of energy ()
+    conservation of mass for each gas species (ngas)
+    conservation of liquid mass (nliquid)
+    conservation of liquid energy
+    conservation of cavern volume (i.e. liquid interface height)
+    
+    residual[0] = Q_axisym - Q_inner
+    residual[1] = -Cg * dT/dt + sum(mdot_in cp_in t_in, wells) - sum (mdot_out cp_out, t_out, wells)
+            + Q_inner + Q_liquid
+    residual[2..ngas+2] = -dm/dt + mdot_in - mdot_out
+    residual[ngas+2...ngas+2+nliquid] = 
+            
+    dEliquid/dt =         
+    
+    How to handle
+    
+    1) Pressure of cavern exceeds well reservoir pressure - flow can no longer
+    happen - a check valve is assumed and pressure in the well reaches the 
+    cavern pressure minus bouyancy effects up the well.
+    
+    
+    
+    
+    
+
+    
+    
 
     """
 
@@ -38,7 +99,9 @@ class SaltCavern(AbstractComponent, HydDown):
                     "mass_fluid":"Total gas mass (kg)",
                     "total_mass_rate":"Mass Flux (+ into cavern) (kg/s)",
                     "P_cavern":"Gas pressure (Pa)",
-                    "Q_inner":"Cavern wall heat flux (W)"}
+                    "Q_inner":"Cavern wall heat flux (W)",
+                    "mole_frac":"Gas mole fractions for gas in cavern",
+                    "mole_frac_in":"Gas mole fractions for gas coming in"}
 
     def __str__(self):
         return "Salt Cavern Object"
@@ -156,12 +219,42 @@ class SaltCavern(AbstractComponent, HydDown):
         Must first evaluate all interface equations for indices produced by interface_var_ind_prev_comp
 
         Then must evaluate all internal component equations
+        
+        Equations for the salt cavern
+        
+        Energy flow
 
 
         Args:
-            xg numpy.array : global x vector for the entire
+            x numpy.array : global x vector for the entire
                              differiental/algebraic system
+                             
+                
+        This is a dynamic ODE implicit solution via euler integration
+
+
+
+
+        Inputs:
+        =======
+            Variables:
+            Local Index 0 = Q0 - flux into the system
+            Local Inices 1 to num_element + 2 Tgvec:
+                vector of ground temperatures spaced radially from the GSHX
+            Local Index Qend - flux out of the system (ussually fixed to 0.0)
+
+        Parameters:
+
+            Tgvec_m1 - Tgvec for the previous time step
+
+        Returns
+        =======
+            residuals - error level from solving the implicit equations
+                        np.array of length number_elements + 1
+                
         """
+        
+        
         breakpoint()
 
 
