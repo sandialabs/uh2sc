@@ -16,6 +16,7 @@ from uh2sc.errors import (FluidStrBracketError,
                           FluidStrNumberError, 
                           FluidStrNumbersDoNotAddToOneError)
 
+
 def filter_cpu_count(cpu_count):
     """
     Filters the number of cpu's to use for parallel runs such that
@@ -180,35 +181,142 @@ def process_CP_gas_string(matstr):
 
     return comp, molefracs, compSRK, fluid
 
-def cavern_initial_mass_flows(inputs,time):
-    # calculate the molefractions
-    mass_flows = np.array([[inputs["wells"][wname]["valves"][vname]["mdot"][0]
-                       for vname, valve in well["valves"].items()]
-                     for wname, well in inputs["wells"].items()])
-    total_mass_flow = mass_flows.sum()
+def reservoir_mass_flows(model,time):
+    """
+    Interpolates the components of mass flow coming from all valves and 
+    captures this into a single mass in/mass out for the cavern if mass were
+    being immediately removed (i.e. no well pressure losses effects assumed).
+    If pressure losses matter, it also returns 
+    all well valve flow conditions in terms of mass flow per fluid for the 
+    global fluid_components vector so that the well equations can be solved
+    and travel time and pressure differences can be accounted for in the
+    well model before mass reaches the cavern.
     
+    # NOTE: this function assumes the underlying model fluids have already been updated
+    # with the current pressure and temperature!
+    """
     
-    fluids = {}
+    inputs = model.inputs
     
-    for wname, well in inputs["wells"].items():
-        for vname, valve in well["valves"].items():
-            cp_mat_str = inputs["wells"][wname]["valves"][vname]["reservoir"]["fluid"]
-            pressure = inputs["wells"][wname]["valves"][vname]["reservoir"]["pressure"]
-            temperature = inputs["wells"][wname]["valves"][vname]["reservoir"]["temperature"]
-            
-            chem_comp, molefracs, compSRK, fluid = process_CP_gas_string(cp_mat_str)
-            
-
-            fluid.update(CP.PT_INPUTS, pressure, temperature)
-            
-            MW = fluid.molar_mass()
-            
-            
+    mdot_cavern = np.zeros(len(model.fluid_components))
+    mdot_valves = {}
     
-    mass_frac = mass_flows/total_mass_flow
+    for wname, well_fluids in model.fluids.items():
+        if wname != 'cavern'
+            mdot_valves[wname] = {}
+            for vname, valve_fluid in well_fluids.items():
+                mdot_valves[vname] = np.zeros(len(model.fluid_components))
+                
+                # get stored information
+                mdot_arr = model.mdots[wname][vname]
+                mass_fracs = valve_fluid.get_mass_fractions()
+                comp_names = valve_fluid.fluid_names()
+                
+                main_ind = [model.fluid_components.index(comp) for comp in comp_names]
+                # see find_all_fluids, time is the second row
+                mdot = np.interp(time, mdot_arr[1,:],mdot_arr[0,:])
+                
+                if mdot < 0.0:
+                    # flow is coming out of the cavern and we must change the
+                    # mass fractions to those of what is in the cavern
+                    cavern_mass_fracs = model.fluids['cavern'].get_mass_fractions()
+                    cavern_comp_names = model.fluids['cavern'].fluid_names()
+                    
+                
+                    
+                
+                mdot_comp = mdot * np.array(mass_fracs)
+                mdot_valves[vname][main_ind] += mdot_comp
+                mdot_cavern[main_ind] += mdot_comp
+        else:
+            
+            
+    return mdot_valves, mdot_cavern
+            
+            
     
     
     
     
     return []
+
+def find_all_fluids(model):
+    """
+    Finds all of the fluids named in the input and sets up every fluid to
+    include all terms even if they are zero for a reservoir.
+    
+    
+    """
+    
+    
+    fluid_components = []
+
+    
+    # first get all fluids
+    for wname, well in model.inputs["wells"].items():
+        for vname, valve in well["valves"].items():
+            if valve["type"] != "mdot":
+                raise NotImplementedError("Only mdot valves have been implemented!")
+
+            if "reservoir" in valve:
+                
+                reservoir = valve["reservoir"]
+
+                vfluids = valve["reservoir"]["fluid"]
+                comps, molefracs, compSRK, fluid = process_CP_gas_string(vfluids)
+                #Translate to exact CoolProp name for the fluid in the DB
+                for pure_fluid in fluid.fluid_names():
+                    if pure_fluid not in fluid_components:
+                        fluid_components.append(pure_fluid)
+                        
+    icomps, imolefracs, icompSRK, ifluid = process_CP_gas_string(model.inputs["initial"]["fluid"])
+    for ipure_fluid in ifluid.fluid_names():
+        if ipure_fluid not in fluid_components:
+            fluid_components.append(ipure_fluid)
+
+    fluids = {}
+    mdots = {}
+    for wname, well in model.inputs["wells"].items():
+        fluids[wname] = {}
+        mdots[wname] = {}
+        for vname, valve in well["valves"].items():
+            if valve["type"] != "mdot":
+                raise NotImplementedError("Only mdot valves have been implemented!")
+
+            
+            if "reservoir" in valve:
+                
+                a = np.array([1, 2, 3])
+                b = np.array([4, 5, 6])
+                
+                stacked_array = np.stack((a, b))
+                
+                reservoir = valve["reservoir"]
+
+                vfluids = valve["reservoir"]["fluid"]
+                for pure_fluid in fluid_components:
+                    if pure_fluid not in vfluids:
+                        vfluids += "&{pure_fluid}[0.0]" 
+                
+                comps, molefracs, compSRK, fluid = process_CP_gas_string(vfluids)
+                
+                mdots[wname][vname] = np.stack((np.array(valve["reservoir"]["mdot"]),np.array(valve["reservoir"]["time"])))
+                
+                fluids[wname][vname] = fluid
+    
+    cavern_comps_str = model.inputs["initial"]["fluid"]
+    for pure_fluid in fluid_components:
+        if pure_fluid not in model.inputs["initial"]
+
+
+    
+    
+    
+    fluids["cavern"] = ifluid
+            
+    model.fluids = fluids
+    model.fluid_components = fluid_components
+    model.mdots = mdots
+            
+    return fluid_components, fluids, mdots
 

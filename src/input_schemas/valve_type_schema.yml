@@ -31,7 +31,7 @@ control_valve:
         min: 0.0
         required: true
         type: number
-      fluid: 
+      fluid:
         required: true
         type: string
         check_with: fluid_string_check
@@ -66,7 +66,7 @@ mdot:
         min: 0.0
         required: true
         type: number
-      fluid: 
+      fluid:
         required: true
         type: string
         check_with: fluid_string_check
@@ -99,10 +99,14 @@ orifice:
         min: 0.0
         required: true
         type: number
-      fluid: 
+      fluid:
         required: true
         type: string
         check_with: fluid_string_check
+      is_liquid:
+        type: boolean
+        required: false
+        default: false
     type: dict
 psv:
   back_pressure:

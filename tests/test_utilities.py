@@ -9,7 +9,8 @@ import unittest
 import os
 import warnings
 
-from uh2sc.utilities import process_CP_gas_string, filter_cpu_count
+from uh2sc.utilities import (process_CP_gas_string, filter_cpu_count, 
+                             find_all_fluids, reservoir_mass_flows)
 
 
 class TestUtilities(unittest.TestCase):
@@ -84,6 +85,50 @@ class TestUtilities(unittest.TestCase):
         
         cpu_count = filter_cpu_count(1)
         self.assertEqual(cpu_count,1)
+        
+    def test_find_all_fluids_and_mass_flow(self):
+        
+        self.inputs = {'initial':{'fluid':'H2'},
+                       'wells':{'cavern_well':{'valves':{'inflow_mdot':
+                            {'type':'mdot','reservoir':{'fluid':'H2','mdot':[0,100],'time':[0,10]}}}}}}
+            
+        fluid_components, fluids, mdots = find_all_fluids(self)
+        self.fluid_components = fluid_components
+        self.fluids = fluids
+        
+        mdot_valves, mdot_cavern = reservoir_mass_flows(self,0.0)
+        
+        self.assertAlmostEqual(mdot_cavern[0], 0.0)
+        
+        
+        self.assertEqual(fluid_components[0], "Hydrogen")
+        
+        self.inputs = {'initial':{'fluid':'H2[0.5]&Methane[0.25]&H2O[0.25]'},
+                       'wells':{'cavern_well':{'valves':{'inflow_mdot':
+                            {'type':'mdot','reservoir':{'fluid':'CO2','mdot':[0,100],'time':[0,10]}}}}}}
+        
+        fluid_components2, fluids2, mdots2 = find_all_fluids(self)
+        
+        self.assertListEqual(fluid_components2, ['CarbonDioxide', 'Hydrogen',
+                                                 'Methane', 'Water'])
+        
+        # include a valve that has no effect
+        self.inputs = {'initial':{'fluid':'H2[0.5]&Methane[0.25]&H2O[0.25]'},
+                       'wells':{'cavern_well':{'valves':{'inflow_mdot':
+                            {'type':'mdot','reservoir':{'fluid':'CO2','mdot':[0,100],'time':[0,10]}},
+                                            'mdot2_valve':{'type':'mdot','reservoir':{'fluid':'N2[0.1]&Butane[0.9]'},'mdot':[0,100],'time':[0,10]}}}}}
+            
+        fluid_components3, fluids3, mdots3 = find_all_fluids(self)
+        
+        self.assertListEqual(fluid_components3, ['CarbonDioxide', 'Nitrogen',
+                                                 'n-Butane', 'Hydrogen', 
+                                                 'Methane', 'Water'])
+        
+        mdot_valves, mdot_cavern = reservoir_mass_flows(self,5.0)
+        
+        pass
+        
+        
 
         
     

@@ -106,7 +106,7 @@ class SaltCavern(AbstractComponent, HydDown):
     def __str__(self):
         return "Salt Cavern Object"
 
-    def __init__(self,input_dict,global_indices):
+    def __init__(self,input_dict,global_indices,next_components, prev_components, model):
         # this includes validation of the input dictionary which must follow
         # the main schema in validatory.py
         # do stuff relevant to model
@@ -116,7 +116,9 @@ class SaltCavern(AbstractComponent, HydDown):
 
         self.first_step = True
         self.step_num = 0.0
-
+        self._next_components = next_components
+        self._prev_components = prev_components
+        self._model = model
         self.cavern_results = {val: [] for val in self._result_name_map.values()}
 
 
@@ -197,13 +199,23 @@ class SaltCavern(AbstractComponent, HydDown):
         """
         Interface variable indices for the previous component
         """
-        pass
+        prev_comp = {}
+        for wname, well in self._prev_components:
+            prev_comp[wname] = self._model.components[wname]
+        return prev_comp
+            
 
     @property
     def next_adjacent_components(self):
         """
-        interface variable indices for the next component
+        interface variable indices for the next component which can only be 
+        1 GHE for a cavern (even though this is written as a loop)
         """
+        next_comp = {}
+        for ghe_name, ghe in self._next_components.items():
+            next_comp[ghe_name] = self._model.components[ghe_name]
+        return next_comp
+        
         
     @property
     def component_type(self):
@@ -253,6 +265,118 @@ class SaltCavern(AbstractComponent, HydDown):
                         np.array of length number_elements + 1
                 
         """
+        
+        # Inititialise / setting initial values for t=0
+        breakpoint()
+        
+        # translate x vector to local variables
+        xloc = x[self._gindices]
+        
+        
+        self.initialize()
+        inp = self.input
+
+        # mass balance 
+        residuals[0] = 0
+
+        self._mass_rate(0)
+        self.total_mass_rate[0] = self._total_mass_rate(0)
+
+        # Run actual integration by updating values by numerical integration/time stepping
+        # Mass of fluid is calculated from previous time step mass and mass flow rate
+        for i in range(1, len(self.time_array)):
+
+            # if i == 100:
+            #     breakpoint()
+            #     from matplotlib import pyplot as plt
+            #     plt.plot(self.time_array[:i],self.T_cavern[:i])
+            #     plt.show()
+
+            # must sum mass rate
+            total_mass_rate = self._total_mass_rate(i)
+            self.total_mass_rate[i] = total_mass_rate
+
+            # filling is positive total mass rate, discharge is negative
+            # the perspective is from the cavern.
+            self.mass_fluid[i] = (
+                self.mass_fluid[i - 1] + total_mass_rate * self.tstep
+            )
+
+            self.rho[i] = self.mass_fluid[i] / self.vol
+
+            hi = self._calc_h_in(i)
+            self.h_inside[i] = hi
+
+            # same as above
+            self.Q_inner[i] = (
+                self.surf_area_inner
+                * hi
+                * (self.T_cavern_wall[i - 1] - self.T_cavern[i - 1])
+            )
+
+            # Axisymmetric, time-transient heat transfer
+            # the Q_inner is negative when leaving the gas into
+            # the salt but positive coming into the salt (thus)
+            # the negative sign
+            Tgvec = self.axsym.step(self.tstep,-self.Q_inner[i])
+
+            self.T_cavern_wall[i] = Tgvec[0]
+
+            # Run the explicit models of pipe losses for each well.
+            for wname, well in self.wells.items():
+                if not well.input["ideal_pipes"]:
+                    well.step(i,self.P_cavern[i-1],self,wname)
+
+
+            #NMOL = self.mass_fluid[i - 1] / self.MW
+            #NMOL_ADD = (self.mass_fluid[i] - self.mass_fluid[i - 1]) / self.MW
+            # New
+            U_start = self.U_mass[i - 1] * self.mass_fluid[i - 1]
+
+            # Finding the inlet/outlet enthalpy rate for the energy balance
+            # HERE IS WHERE I STOPPED, YOU NEED TO WRITE A FUNCTION OVER
+            # WELLS and PIPES that finds the average h_in
+
+            h_in = self._enthalpy_rate(i)
+
+            if i > 1:
+                P1 = self.P_cavern[i - 2]
+            else:
+                P1 = self.P_cavern[i - 1]
+
+            U_end = (
+                U_start
+                + self.tstep * total_mass_rate * h_in
+                + self.tstep * self.Q_inner[i]
+            )
+            self.U_mass[i] = U_end / self.mass_fluid[i]
+
+            P1, T1, self.U_res[i] = self.UDproblem(U_end/ self.mass_fluid[i],self.rho[i],self.P_cavern[i-1],self.T_cavern[i-1])
+
+
+            self.P_cavern[i] = P1
+            self.T_cavern[i] = T1
+            self.fluid.update(CP.PT_INPUTS, self.P_cavern[i],  self.T_cavern[i])
+
+
+            # Updating H,S,U states
+            self.H_mass[i] = self.fluid.hmass()
+            self.S_mass[i] = self.fluid.smass()
+            self.U_mass[i] = self.fluid.umass()
+
+            cpcv = self.fluid.cp0molar() / (self.fluid.cp0molar() - Constants.Rg['value'])
+
+            for wname,well in inp["wells"].items():
+                self._mass_rate(i)
+
+            # dlvilla diagnostics to determine if the model
+            if self.include_fault_analytics:
+                self._model_fault_analytics(i)
+
+
+
+
+        self.isrun = True
         
         
         breakpoint()

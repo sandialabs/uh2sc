@@ -11,7 +11,7 @@ from uh2sc.errors import InputFileError, NewtonSolverError
 from uh2sc.solvers import NewtonSolver
 from uh2sc.abstract import AbstractComponent, ComponentTypes
 from uh2sc.hdclass import ImplicitEulerAxisymmetricRadialHeatTransfer
-from uh2sc.utilities import process_CP_gas_string, cavern_initial_mass_flows
+from uh2sc.utilities import process_CP_gas_string, reservoir_mass_flows, find_all_fluids
 from uh2sc.salt_cavern import SaltCavern
 
 
@@ -242,6 +242,13 @@ class Model(AbstractComponent):
         xg = []
         num_var = {}
         components = {}
+        
+        # assigns self.fluids for reservoirs from mdot valves and the initial
+        # cavern state (which changes unless every gas is the same)
+        # also assigns self.fluid_components which is the list of all pure fluids
+        # that exist in the model and is used to define equations
+        find_all_fluids(self)
+        
         if num_caverns != 0:
             self._build_cavern(xg_descriptions,xg,components)
             num_var["caverns"] = len(xg_descriptions)
@@ -381,19 +388,29 @@ class Model(AbstractComponent):
                   adj_comps=adjacent_comps,
                   global_indices=(beg_idx,end_idx))
 
+    
 
     def _build_cavern(self,x_desc,xg,components):
         """
         Build the cavern (no multi-cavern capability yet!)
         
         """
+        if len(self.test_inputs) != 0:
+            
+            pass
+        else:
+            pass
+            prev_components = self.inputs['wells']
+            ghe_name = self.inputs['cavern']['ghe_name']
+            next_components = {ghe_name:self.inputs["ghes"][ghe_name]}
+        
         cavern = self.inputs["cavern"]
         beg_idx = len(xg)
         
         # add all cavern variables
-        x_desc += ["Cavern temperature (K)"]
+        x_desc += ["Cavern gas temperature (K)"]
         xg += [self.inputs["initial"]["temperature"]]
-        x_desc += ["Cavern wall temperature (K)"]
+        x_desc += ["Cavern gas wall temperature (K)"]
         xg += [self.inputs["initial"]["temperature"]]
         x_desc += ["Cavern pressure (Pa)"]
         xg += [self.inputs["initial"]["pressure"]]
@@ -402,10 +419,11 @@ class Model(AbstractComponent):
         x_desc += ["Cavern mass flow in (+) or out (-) (kg/s)"]
         # you need a function that sums all of the valves associated with all
         # wells connected to the cavern.
-        inflow_molefracs = cavern_initial_mass_flows(self.inputs, 0.0)
         
-        xg += []
-        x_desc += ["Cavern input gas mole"]
+        inflow_molefracs = reservoir_mass_flows(self, 0.0)
+        
+        xg += [0.0]
+        x_desc += ["Cavern input gas mole fractions"]
         
         end_idx = len(xg)-1  # minus one because of 0 indexing!
         
@@ -419,12 +437,35 @@ class Model(AbstractComponent):
         
         
         components["cavern"] = SaltCavern(self.inputs,global_indices=
-                                          (beg_idx,end_idx))
+                                          (beg_idx,end_idx),next_components=next_components,
+                                          prev_components=prev_components)
         
 
     def _build_wells(self,x_desc,xg,components):
-        pass
-
+        
+        if len(self.test_inputs) != 0:
+            pass
+        else:
+            pass
+            # this is undeveloped
+        
+        wells = self.inputs["cavern"]["wells"]
+        
+        beg_idx = len(xg)
+        
+        for wname, well in wells.items():
+            if (well["ideal_pipes"] 
+                and len(well["pipe_diameters"]==4) 
+                and well["pipe_diameters"][0]==0.0 
+                and well["pipe_diameters"][1] == 0.0):
+                
+                valve = list(well["valves"].keys())[0]
+                
+                xg += [0.0] #TODO FIX THIS!
+                x_desc += ["Mass flow into well from "]
+                
+            else:
+                raise NotImplementedError("We only")
 
 
     def _validate(self):
@@ -482,3 +523,6 @@ class Model(AbstractComponent):
         if ghe_name == self.inputs["cavern"]["ghe_name"]:
             adj_comp.append(("cavern",self.inputs["cavern"]))
         return adj_comp
+    
+
+
