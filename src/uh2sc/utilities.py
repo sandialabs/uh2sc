@@ -7,6 +7,7 @@ Created on Wed Jan 17 15:05:14 2024
 
 import os
 from warnings import warn
+import re
 
 import numpy as np
 
@@ -15,6 +16,12 @@ from CoolProp import CoolProp as CP
 from uh2sc.errors import (FluidStrBracketError, 
                           FluidStrNumberError, 
                           FluidStrNumbersDoNotAddToOneError)
+from uh2sc.constants import Constants
+from uh2sc.thermodynamics import (solubility_of_nacl_in_h2o, 
+                                  brine_saturated_pressure, 
+                                  density_of_brine_water)
+
+const = Constants()
 
 
 def filter_cpu_count(cpu_count):
@@ -163,8 +170,8 @@ def process_CP_gas_string(matstr):
         comp_frac_pair = [str.replace("["," ").replace("]","").split(" ") for str in  matstr.split("&")]
         comp0 = [pair[0] for pair in comp_frac_pair]
         compSRK0 = [pair[0]+"-SRK" for pair in comp_frac_pair]
-        molefracs0 = np.asarray([float(pair[1]) for pair in comp_frac_pair])
-        molefracs = molefracs0 / sum(molefracs0)
+        massfracs0 = np.asarray([float(pair[1]) for pair in comp_frac_pair])
+        massfracs = massfracs0 / sum(massfracs0)
 
         sep = "&"
         comp = sep.join(comp0)
@@ -172,14 +179,13 @@ def process_CP_gas_string(matstr):
     # Normally single component fluid is specified
     else:
         comp = matstr
-        molefracs = [1.0]
+        massfracs = [1.0]
         compSRK = matstr
         
     fluid = CP.AbstractState("HEOS",comp)
-    fluid.set_mole_fractions(molefracs)
-    fluid.specify_phase(CP.iphase_gas)
+    fluid.set_mass_fractions(massfracs)
 
-    return comp, molefracs, compSRK, fluid
+    return comp, massfracs, compSRK, fluid
 
 def reservoir_mass_flows(model,time):
     """
@@ -202,10 +208,10 @@ def reservoir_mass_flows(model,time):
     mdot_valves = {}
     
     for wname, well_fluids in model.fluids.items():
-        if wname != 'cavern'
+        if wname != 'cavern':
             mdot_valves[wname] = {}
             for vname, valve_fluid in well_fluids.items():
-                mdot_valves[vname] = np.zeros(len(model.fluid_components))
+                mdot_valves[wname][vname] = np.zeros(len(model.fluid_components))
                 
                 # get stored information
                 mdot_arr = model.mdots[wname][vname]
@@ -213,24 +219,22 @@ def reservoir_mass_flows(model,time):
                 comp_names = valve_fluid.fluid_names()
                 
                 main_ind = [model.fluid_components.index(comp) for comp in comp_names]
-                # see find_all_fluids, time is the second row
-                mdot = np.interp(time, mdot_arr[1,:],mdot_arr[0,:])
+                # see find_all_fluids, time is the second row, mdot is the first
+                # row.
+                mdot = np.interp(time, mdot_arr[1,:], mdot_arr[0,:])
                 
                 if mdot < 0.0:
                     # flow is coming out of the cavern and we must change the
                     # mass fractions to those of what is in the cavern
-                    cavern_mass_fracs = model.fluids['cavern'].get_mass_fractions()
-                    cavern_comp_names = model.fluids['cavern'].fluid_names()
-                    
-                
-                    
-                
+                    # this only applies when a well assumes ideal pipes that
+                    # produce no losses.
+                    mass_fracs = model.fluids['cavern'].get_mass_fractions()
+                    comp_names = model.fluids['cavern'].fluid_names()
+  
                 mdot_comp = mdot * np.array(mass_fracs)
-                mdot_valves[vname][main_ind] += mdot_comp
+                mdot_valves[wname][vname][main_ind] += mdot_comp
                 mdot_cavern[main_ind] += mdot_comp
-        else:
-            
-            
+
     return mdot_valves, mdot_cavern
             
             
@@ -247,13 +251,12 @@ def find_all_fluids(model):
     
     
     """
-    
-    
     fluid_components = []
-
+    fluid_mapping = {}
     
-    # first get all fluids
+    # first get all fluid names from reservoirs and store them in "fluid_components" list
     for wname, well in model.inputs["wells"].items():
+        fluid_mapping[wname] = {}
         for vname, valve in well["valves"].items():
             if valve["type"] != "mdot":
                 raise NotImplementedError("Only mdot valves have been implemented!")
@@ -268,12 +271,18 @@ def find_all_fluids(model):
                 for pure_fluid in fluid.fluid_names():
                     if pure_fluid not in fluid_components:
                         fluid_components.append(pure_fluid)
-                        
+                fluid_mapping[wname][vname] = fluid
+    
+    # add the initial fluid in the cavern to fluid_components
     icomps, imolefracs, icompSRK, ifluid = process_CP_gas_string(model.inputs["initial"]["fluid"])
     for ipure_fluid in ifluid.fluid_names():
         if ipure_fluid not in fluid_components:
             fluid_components.append(ipure_fluid)
-
+    fluid_mapping['cavern'] = ifluid
+    
+    
+    # now characterize fluids that contain all pure_fluids in the entire analysis
+    # for each well's valves.
     fluids = {}
     mdots = {}
     for wname, well in model.inputs["wells"].items():
@@ -281,42 +290,131 @@ def find_all_fluids(model):
         mdots[wname] = {}
         for vname, valve in well["valves"].items():
             if valve["type"] != "mdot":
-                raise NotImplementedError("Only mdot valves have been implemented!")
+                raise NotImplementedError("Only mdot valves have "
+                                          +"been implemented!")
 
-            
             if "reservoir" in valve:
-                
-                a = np.array([1, 2, 3])
-                b = np.array([4, 5, 6])
-                
-                stacked_array = np.stack((a, b))
-                
                 reservoir = valve["reservoir"]
-
-                vfluids = valve["reservoir"]["fluid"]
-                for pure_fluid in fluid_components:
-                    if pure_fluid not in vfluids:
-                        vfluids += "&{pure_fluid}[0.0]" 
                 
-                comps, molefracs, compSRK, fluid = process_CP_gas_string(vfluids)
-                
-                mdots[wname][vname] = np.stack((np.array(valve["reservoir"]["mdot"]),np.array(valve["reservoir"]["time"])))
-                
+                fluid_str = _construct_ordered_fluid_str(fluid_components,
+                                                         fluid_mapping,
+                                                         (wname,vname))
+                comps, massfracs, compSRK, fluid = process_CP_gas_string(fluid_str)
+                mdots[wname][vname] = np.stack((np.array(valve["mdot"]),np.array(valve["time"])))
                 fluids[wname][vname] = fluid
     
-    cavern_comps_str = model.inputs["initial"]["fluid"]
-    for pure_fluid in fluid_components:
-        if pure_fluid not in model.inputs["initial"]
-
-
-    
-    
-    
+    # create a fluid for the cavern as well with all components present.
+    cavern_fluid_str = _construct_ordered_fluid_str(fluid_components,
+                                                    fluid_mapping)    
+    icomps, imolefracs, icompSRK, ifluid = process_CP_gas_string(cavern_fluid_str)
     fluids["cavern"] = ifluid
-            
+    
+    pres = model.inputs['initial']['pressure']
+    temp = model.inputs['initial']['temperature']
+    # set initial fluid properties
+    for wname, fluiddict in fluids.items():
+        if wname != 'cavern':
+            for vname, fluid in fluiddict.items():
+                fluid.update(CP.PT_INPUTS,pres,temp)
+    fluids['cavern'].update(CP.PT_INPUTS,pres,temp)
+    
     model.fluids = fluids
     model.fluid_components = fluid_components
     model.mdots = mdots
+    
+    molar_masses = {}
+    for fcomp in fluid_components:
+        tempfluid = CP.AbstractState("HEOS",fcomp)
+        molar_masses[fcomp] = tempfluid.molar_mass()
+    
+    # in kg/mol
+    model.molar_masses = molar_masses
+        
             
-    return fluid_components, fluids, mdots
+    return fluid_components, fluids, mdots, molar_masses
 
+
+def _construct_ordered_fluid_str(fluid_components,fluid_mapping,names=None):
+    if len(fluid_components) == 1:
+        # a single fluid, no mole fractions needed.
+        return fluid_components[0]
+    else:
+        if isinstance(names, tuple):
+            wname,vname = names
+            cp_fluid = fluid_mapping[wname][vname]
+        else:
+            cp_fluid = fluid_mapping["cavern"]
+            
+        fluid_str = ""
+        prestr = ""
+        
+        cp_fluid_names = cp_fluid.fluid_names()
+        cp_mole_fracs = cp_fluid.get_mole_fractions()
+        for pure_fluid in fluid_components:
+            if pure_fluid in cp_fluid_names:
+                cp_ind = cp_fluid_names.index(pure_fluid)
+                molfrac = cp_mole_fracs[cp_ind]
+            else:
+                molfrac = 0.0
+            if len(fluid_str) > 0:
+                prestr = "&"
+                
+            fluid_str += f"{prestr}{pure_fluid}[{molfrac:.8e}]"
+        return fluid_str
+    
+def calculate_component_masses(fluid,molar_masses,gas_mass=0.0,liquid_mass=0.0):
+
+    
+    if fluid.phase() == CP.iphase_gas or fluid.phase() == CP.iphase_supercritical:
+        if liquid_mass != 0.0:
+            raise ValueError("You cannot have a liquid_mass when the fluid"
+                             +" in the cavern is only gas!")
+            
+        return {'gas':gas_mass * np.array(fluid.get_mass_fractions()),
+                'liquid':np.zeros(len(fluid.fluid_names()))}
+        
+    elif fluid.phase() == CP.iphase_liquid:
+        if gas_mass != 0:
+            raise ValueError("You canot have a gas_mass when the fluid"
+                             +" in the cavern is only liquid!")
+        return {'gas':np.zeros(len(fluid.fluid_names())),
+                'liquid':liquid_mass * np.array(fluid.get_mass_fractions())}            
+        
+    elif fluid.phase() == CP.iphase_twophase:
+    
+        
+        gmolfracs = {fluid_name:gmol for fluid_name,gmol in zip(fluid.fluid_names(),fluid.mole_fractions_vapor())}
+        lmolfracs = {fluid_name:lmol for fluid_name,lmol in zip(fluid.fluid_names(),fluid.mole_fractions_liquid())}
+
+        gsum = np.array([gmol * molar_masses[name] for name, gmol in gmolfracs.items()]).sum()
+        lsum = np.array([lmol * molar_masses[name] for name, lmol in lmolfracs.items()]).sum()
+        
+        gmass = gas_mass * np.array([gmol * molar_masses[name]/gsum for name, gmol in gmolfracs.items()])
+        lmass = liquid_mass * np.array([lmol * molar_masses[name]/lsum for name, lmol in lmolfracs.items()])
+
+        return {'gas':gmass, 'liquid':lmass}
+        
+    else:
+        breakpoint()
+        raise NotImplementedError("Only gas, liquid, or gas and liquid mixtures are modeled!")
+        
+def brine_average_pressure(fluid,water,height_total,height_brine,t_brine):
+    """
+    Approximate the average pressure for the brine
+    
+    """
+    # TODO: create a test for this!
+    pres_g = fluid.p()
+    rho_g = fluid.rhomass()
+    # assume density is constant
+    height_gas_o_2 = (height_total - height_brine)/2
+    pres_g_surf = pres_g + rho_g * const.g['value'] * height_gas_o_2
+    rho_pure_water = water.rhomass()
+    height_brine_o_2 = height_brine / 2
+    solubility_brine = solubility_of_nacl_in_h2o(t_brine)
+    rho_brine = density_of_brine_water(t_brine, pres_g_surf, solubility_brine, rho_pure_water)
+            
+    return (pres_g_surf + height_brine_o_2 * const.g['value'] * rho_brine,
+           solubility_brine,
+           rho_brine)
+    

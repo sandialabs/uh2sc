@@ -76,13 +76,18 @@ initial:
     temperature:
       required: true
       type: number
-      max: 5000.0
+      max: 380.0
       min: 273.0
     liquid_height:
       required: true
       type: number
       max: 1.0
       min: 0.0
+    liquid_temperature:
+      required: true
+      type: number
+      max: 380.0
+      min: 273.0
   type: dict
 wells:
   allow_unknown: true

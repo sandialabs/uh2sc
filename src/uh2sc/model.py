@@ -11,8 +11,17 @@ from uh2sc.errors import InputFileError, NewtonSolverError
 from uh2sc.solvers import NewtonSolver
 from uh2sc.abstract import AbstractComponent, ComponentTypes
 from uh2sc.hdclass import ImplicitEulerAxisymmetricRadialHeatTransfer
-from uh2sc.utilities import process_CP_gas_string, reservoir_mass_flows, find_all_fluids
+from uh2sc.utilities import (process_CP_gas_string, 
+                             reservoir_mass_flows, 
+                             find_all_fluids,
+                             calculate_component_masses,
+                             brine_average_pressure)
 from uh2sc.salt_cavern import SaltCavern
+from uh2sc.well import Well, VerticalPipe, PipeMaterial
+from uh2sc.constants import Constants
+from uh2sc.thermodynamics import (density_of_brine_water, 
+                                  brine_saturated_pressure, 
+                                  solubility_of_nacl_in_h2o)
 
 
 
@@ -153,7 +162,10 @@ class Model(AbstractComponent):
         xg = self.xg
         for cname, component in self.components.items():
             bind, eind = component.global_indices
-            xg[bind:eind+1] = component.get_x()
+            try:
+                xg[bind:eind+1] = component.get_x()
+            except:
+                breakpoint()
         return xg
 
     def evaluate_residuals(self,x=None):
@@ -203,6 +215,7 @@ class Model(AbstractComponent):
         simple model uh2sc uses. The purpose of adding liquid can be to control gas pressure
         uh2sc does not model chemistry inside the liquid.
 
+        THIS NEEDS UPDATING (BELOW)
         Component    Num var        Description
         Cavern            1.             Cavern Gas Temperature
                           1.             Cavern Wall Temperature
@@ -247,7 +260,9 @@ class Model(AbstractComponent):
         # cavern state (which changes unless every gas is the same)
         # also assigns self.fluid_components which is the list of all pure fluids
         # that exist in the model and is used to define equations
+        # sets self.molar_masses and others!
         find_all_fluids(self)
+        self.num_material = len(self.molar_masses)
         
         if num_caverns != 0:
             self._build_cavern(xg_descriptions,xg,components)
@@ -269,28 +284,10 @@ class Model(AbstractComponent):
         else:
             num_var["ghes"] = 0
 
+        self.xg_descriptions = xg_descriptions
         self.xg = np.array(xg)
         self.components = components
-
-    def _assign_max_from_adj_comp(self,adj_comps,name,multfact,arrind=None):
-        val = 0.0
-
-        for tup in adj_comps:
-            adjacent_comp = tup[1]
-            if "pipe_diameters" in adjacent_comp:
-                if name == "height":
-                    name = "pipe_lengths"
-                if name == "diameter":
-                    name = "pipe_diameters"
-                if arrind is None:
-                    val = np.max(np.array([val,adjacent_comp[name]*multfact]))
-                else:
-                    val = np.max(np.array([val, adjacent_comp[name][arrind]*multfact]))
-
-            else:
-                val = np.max(np.array([val,adjacent_comp[name]*multfact]))
-
-        return val
+        self._connect_components()
 
 
     def _build_ghes(self,x_desc,xg,components):
@@ -352,10 +349,6 @@ class Model(AbstractComponent):
 
                 t_step = self.inputs["calculation"]["time_step"]
 
-
-
-
-
             # begin global indice
             beg_idx = len(xg)
 
@@ -365,7 +358,7 @@ class Model(AbstractComponent):
             # add all new terms that belong to the descriptions and to the
             xg += [ghe["farfield_temperature"] for _idx in range(ghe["number_elements"]+1)]
             x_desc += [f"GHE name `{name}` element {idx} outer temperature "
-                       +"(inner temperature element {idx-1})"
+                       +f"(inner temperature element {idx-1})"
                        for idx in range(ghe["number_elements"]+1)]
 
             xg += [ghe["initial_conditions"]["Qend"]]
@@ -407,41 +400,72 @@ class Model(AbstractComponent):
         cavern = self.inputs["cavern"]
         beg_idx = len(xg)
         
+
+        #pure water for brine calculations
+        water = CP.AbstractState("HEOS","Water")
+        water.update(CP.PT_INPUTS,self.inputs['initial']['pressure'],self.inputs['initial']['temperature'])
+        water.set_mole_fractions([1.0])
+        self.water = water
+        
+        #geometry
+        area_horizontal = np.pi * self.inputs['cavern']['diameter']**2/4
+        area_vertical = np.pi * self.inputs['cavern']['diameter'] * self.inputs["cavern"]["height"]
+        height_total = self.inputs["cavern"]["height"]
+        height_brine = self.inputs['initial']['liquid_height']
+        vol_brine = height_brine * area_horizontal
+        height_total = self.inputs["cavern"]["height"]
+        height_brine = self.inputs['initial']['liquid_height']
+        t_brine = self.inputs['initial']['liquid_temperature']
+        (p_brine, solubility_brine,
+         rho_brine) = brine_average_pressure(self.fluids['cavern'],water,height_total,height_brine,t_brine)
+        vol_cavern = (height_total - height_brine) * area_horizontal
+        m_cavern = vol_cavern * self.fluids['cavern'].rhomass()
+        
+        
         # add all cavern variables
         x_desc += ["Cavern gas temperature (K)"]
         xg += [self.inputs["initial"]["temperature"]]
+        
         x_desc += ["Cavern gas wall temperature (K)"]
         xg += [self.inputs["initial"]["temperature"]]
-        x_desc += ["Cavern pressure (Pa)"]
-        xg += [self.inputs["initial"]["pressure"]]
-        x_desc += ["Cavern liquid height (1.0 scale for cavern height)"]
-        xg += [self.inputs["initial"]["liquid_height"]]
-        x_desc += ["Cavern mass flow in (+) or out (-) (kg/s)"]
-        # you need a function that sums all of the valves associated with all
-        # wells connected to the cavern.
         
-        inflow_molefracs = reservoir_mass_flows(self, 0.0)
+        #x_desc += ["Cavern pressure at average height from cavern top to liquid surface (Pa)"]
+        #xg += [self.inputs["initial"]["pressure"]]
         
-        xg += [0.0]
-        x_desc += ["Cavern input gas mole fractions"]
+        x_desc += ["Brine mass (kg)"]
+        xg += [rho_brine * vol_brine]
+        
+        x_desc += ["Brine temperature (K)"]
+        xg += [self.inputs["initial"]["temperature"]]
+        
+        x_desc += ["Brine wall temperature (K)"]
+        xg += [self.inputs["initial"]["temperature"]]
+        
+        # mass balance for each gaseous fluid.
+        mass_dict = calculate_component_masses(self.fluids['cavern'],
+                                               self.molar_masses,
+                                               gas_mass=m_cavern,
+                                               liquid_mass=0.0)
+            
+        for m_pure, fname in zip(mass_dict['gas'],self.fluids['cavern'].fluid_names()):
+            xg += [m_pure]
+            x_desc += [f"Cavern {fname} mass (kg)"]
         
         end_idx = len(xg)-1  # minus one because of 0 indexing!
         
-            
-        gasses, molefracs, compSRK, fluid = process_CP_gas_string(
-            self.inputs["initial"]["fluid"])
-        
-        for molefrac,gas in zip(molefracs,gasses):
-            x_desc += [f"{gas} mole fraction"]
-            xg += [molefrac]
-        
-        
         components["cavern"] = SaltCavern(self.inputs,global_indices=
-                                          (beg_idx,end_idx),next_components=next_components,
-                                          prev_components=prev_components)
+                                          (beg_idx,end_idx),
+                                          model=self)
         
 
     def _build_wells(self,x_desc,xg,components):
+        """
+        Warning! this function has been written without
+        the number of control volumes in the well being considered!
+        It only assigns input and output values as variables equivalent
+        to a single control volume
+        
+        """
         
         if len(self.test_inputs) != 0:
             pass
@@ -449,24 +473,158 @@ class Model(AbstractComponent):
             pass
             # this is undeveloped
         
-        wells = self.inputs["cavern"]["wells"]
+        wells = self.inputs["wells"]
         
-        beg_idx = len(xg)
+        
         
         for wname, well in wells.items():
+            numcv = float(self.inputs['wells'][wname]['pipe_lengths'][0] / 
+                          self.inputs['wells'][wname]['control_volume_length'])
+            if numcv != 1.0:
+                raise NotImplementedError("Only one control volume is allowed!"
+                                          +" The well functionality is limited "
+                                          +"to an adiabatic vertical column. A"
+                                          +" future version will include "
+                                          +"multiple control volumes along "
+                                          +"the pipes with heat transfer losses/gains")
+            
+            len_pipe_diameters = len(well["pipe_diameters"])
+            beg_idx = len(xg)
+            
             if (well["ideal_pipes"] 
-                and len(well["pipe_diameters"]==4) 
+                # IDEAL WELL VARIABLE SETUP!
+                and (len_pipe_diameters==4 
                 and well["pipe_diameters"][0]==0.0 
-                and well["pipe_diameters"][1] == 0.0):
+                and well["pipe_diameters"][1] == 0.0)):
                 
-                valve = list(well["valves"].keys())[0]
-                
-                xg += [0.0] #TODO FIX THIS!
-                x_desc += ["Mass flow into well from "]
+                for vname, valve in well["valves"].items():
+
+                    #NOTE: The current implementation does not include
+                    # any non-vertical pipe capability!
+                    # we create a loop but there will only be one valve!
+
+                    valve_inflow, cavern_inflow = reservoir_mass_flows(self, 0.0)
+                    mdot = valve_inflow[wname][vname]
+                    
+                    molefracs = self.fluids[wname][vname].get_mole_fractions()
+                    pure_fluid_names = self.fluids[wname][vname].fluid_names()
+                    massflows = calculate_component_masses(
+                        self.fluids[wname][vname],
+                        self.molar_masses,
+                        mdot.sum())['gas']
+                    
+                    for massflow, pname in zip(massflows, pure_fluid_names):
+                        xg += [massflow]
+                        x_desc += [f"Well `{wname}` valve `{vname}` mass flow for {pname}"]
+                    
+                    if mdot.sum() > 0.0:
+                        initial_temperature = valve["reservoir"]["temperature"]
+                        initial_pressure = valve["reservoir"]["pressure"]
+                    else:
+                        initial_temperature = self.inputs["initial"]["temperature"]
+                        initial_pressure = self.inputs["initial"]["pressure"]
+                    
+                    
+                    temp_mat = PipeMaterial(well["pipe_roughness_ratios"][0],
+                                            well["pipe_thermal_conductivities"][0])
+                    
+                    # only creating this here so that the adiabatic static
+                    # column function can be used.
+                    temp_vp = VerticalPipe(None,
+                                           self.fluids[wname][vname],
+                                           well["pipe_lengths"][0],
+                                           well["pipe_lengths"][0],
+                                           temp_mat,
+                                           valve,
+                                           vname,
+                                           initial_pressure,
+                                           initial_temperature,
+                                           well["pipe_diameters"][0],
+                                           well["pipe_diameters"][1],
+                                           well["pipe_diameters"][2],
+                                           well["pipe_diameters"][3],
+                                           1,
+                                           well["pipe_total_minor_loss_coefficients"])
+                    
+                    temp_fluid,pres_fluid = temp_vp.initial_adiabatic_static_column(
+                        initial_temperature, initial_pressure, mdot)
+                    
+                    if mdot > 0.0:
+                    
+                        xg += [valve["reservoir"]["temperature"]] 
+                        x_desc += ["Valve reservoir temperature (K)"]
+                        xg += [valve["reservoir"]["pressure"]]
+                        x_desc += ["Valve reservoir pressure (Pa)"]
+                    
+                        xg += [temp_fluid[-1]]
+                        x_desc += ["Pipe entrance temperature to cavern (K)"]
+                        xg += [pres_fluid[-1]]
+                        x_desc += ["Pipe entrance pressure to cavern (K)"]
+                        
+                    else:
+                        
+                        xg += [temp_fluid[0]] 
+                        x_desc += ["Valve reservoir temperature (K)"]
+                        xg += [pres_fluid[0]]
+                        x_desc += ["Valve reservoir pressure (Pa)"]
+                    
+                        xg += [self.inputs['initial']['temperature']]
+                        x_desc += ["Pipe entrance temperature to cavern (K)"]
+                        xg += [self.inputs['initial']['pressure']]
+                        x_desc += ["Pipe entrance pressure to cavern (K)"]
+                        
+
                 
             else:
-                raise NotImplementedError("We only")
+                raise NotImplementedError("We only have implemented ideal"
+                                          +" wells with 1 pipe!")
+            end_idx = len(xg)-1
+            
+            components[wname] = Well(wname, well, self, (beg_idx,end_idx))
+            
+    def _connect_components(self):
+        
+        # cavern-ghe
+        cghe = self.inputs['cavern']['ghe_name']
+        self.components['cavern']._next_components = {}
+        self.components['cavern']._next_components[cghe] = self.components[cghe]
+        self.components[cghe]._prev_components = {}
+        self.components[cghe]._next_components = {} # there are no next for GHE!
+        self.components[cghe]._prev_components['cavern'] = self.components['cavern']
+        
+        # well-cavern
+        self.components['cavern']._prev_components = {}
+        for comp_name, comp in self.components.items():
+            if isinstance(comp,Well):
+                self.components['cavern']._prev_components[comp_name] = comp
+                self.components[comp_name]._next_components = {}
+                self.components[comp_name]._next_components['cavern'] = self.components['cavern']
+                # Currently there are no prev components, in the future, maybe 
+                # we could make this a pipe that leads to a compressor or leads
+                # to a network of sub-surface storage salt caverns.
+                self.components[comp_name]._prev_components = {}
+                
+        
+    def _assign_max_from_adj_comp(self,adj_comps,name,multfact,arrind=None):
+        val = 0.0
 
+        for tup in adj_comps:
+            adjacent_comp = tup[1]
+            if "pipe_diameters" in adjacent_comp:
+                if name == "height":
+                    name = "pipe_lengths"
+                if name == "diameter":
+                    name = "pipe_diameters"
+                if arrind is None:
+                    val = np.max(np.array([val,adjacent_comp[name]*multfact]))
+                else:
+                    val = np.max(np.array([val, adjacent_comp[name][arrind]*multfact]))
+
+            else:
+                val = np.max(np.array([val,adjacent_comp[name]*multfact]))
+
+        return val
+    
 
     def _validate(self):
         """

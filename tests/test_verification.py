@@ -304,10 +304,10 @@ class TestSaltCavernVerification(unittest.TestCase):
                     #     nstep = int(nstep)
                     # inp["calculation"]["end_time"] = end_time
 
-                    # # read verification dataset from Nielson
-                    # filename = subd['file'][days_per_cycle]
-                    # verify_obj = prepare_csv_data(con.nonleapyear,os.path.join(
-                    #    os.path.dirname(__file__),"test_data",filename))
+                    # read verification dataset from Nielson
+                    filename = subd['file'][days_per_cycle]
+                    verify_obj = prepare_csv_data(con.nonleapyear,os.path.join(
+                        os.path.dirname(__file__),"test_data",filename))
 
                     # temp_max_pressure = fahrenheit_to_kelvin(verify_obj["degrees fahrenheit"].max())
                     # temp_min_pressure = fahrenheit_to_kelvin(verify_obj["degrees fahrenheit"].min())
@@ -358,6 +358,7 @@ class TestSaltCavernVerification(unittest.TestCase):
                         model.run()
                         cycle_flow_commands(model)
 
+                    sc = model.components["salt_cavern"]
                     v_df = create_df_from_sim_output(con.nonleapyear, sc.cavern_results)
 
                     s_kelvin = fahrenheit_to_kelvin(verify_obj['degrees fahrenheit'])

@@ -245,10 +245,8 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
         bind,eind = self.global_indices
         self.Tgvec = xg[bind+1:eind]
         self.Q[0] = xg[bind]
-        try:
-            self.Q[-1] = xg[eind]
-        except:
-            breakpoint()
+        self.Q[-1] = xg[eind]
+
 
 
 class HydDown:
@@ -548,24 +546,7 @@ class HydDown:
             Ures = 0
         return P1, T1, Ures
 
-    def _calc_h_in(self,i):
-        if self.h_in == "calc":
 
-            L = self.length
-
-            T_film = (self.T_cavern[i - 1]+self.T_cavern_wall[i - 1])/2
-            self.transport_fluid.update(CP.PT_INPUTS, self.P_cavern[i-1], T_film)
-
-            if self.total_mass_rate[i] > 0.0: #if self.inputs["valve"]["flow"] == "filling":
-               # TODO - REmOVE : this should be the same but I have it this way for direct verification
-               # that I have not made any changes.
-               hi = tp.h_inside_mixed(L, self.T_cavern_wall[i-1], self.T_cavern[i-1], self.transport_fluid, self.total_mass_rate[i-1], self.diameter)
-            else:
-               # outflow does not cause significant forced mixing on the level of caverns
-               hi = tp.h_inside(L, self.T_cavern_wall[i-1], self.T_cavern[i-1], self.transport_fluid)
-        else:
-            hi = self.h_in
-        return hi
 
     def _total_mass_rate(self,i):
         val = np.array([[self.mass_rate[wname][vname][i] for vname, valve in well["valves"].items()]

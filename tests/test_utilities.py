@@ -9,9 +9,12 @@ import unittest
 import os
 import warnings
 
-from uh2sc.utilities import (process_CP_gas_string, filter_cpu_count, 
-                             find_all_fluids, reservoir_mass_flows)
+import numpy as np
 
+from uh2sc.utilities import (process_CP_gas_string, filter_cpu_count, 
+                             find_all_fluids, reservoir_mass_flows,
+                             calculate_component_masses)
+from CoolProp import CoolProp as CP
 
 class TestUtilities(unittest.TestCase):
     @classmethod
@@ -88,11 +91,30 @@ class TestUtilities(unittest.TestCase):
         
     def test_find_all_fluids_and_mass_flow(self):
         
+        # include a valve that has no effect
+        self.inputs = {'initial':{'fluid':'H2[0.5]&Methane[0.25]&H2O[0.25]'},
+                       'wells':{'cavern_well':{'valves':{'inflow_mdot':
+                            {'type':'mdot','reservoir':{'fluid':'CO2'},'mdot':[0,10],'time':[0,100]},
+                                            'mdot2_valve':{'type':'mdot','reservoir':{'fluid':'N2[0.1]&Butane[0.9]'},'mdot':[0,-10,10],'time':[0,50,100]}}}}}
+            
+        fluid_components3, fluids3, mdots3, molar_masses3 = find_all_fluids(self)
+        
+        self.assertListEqual(fluid_components3, ['CarbonDioxide', 'Nitrogen',
+                                                 'n-Butane', 'Hydrogen', 
+                                                 'Methane', 'Water'])
+        
+        mdot_valves, mdot_cavern = reservoir_mass_flows(self,5.0)
+        self.assertAlmostEqual(-1.0, mdot_valves['cavern_well']['mdot2_valve'].sum())
+        self.assertAlmostEqual(0.5, mdot_valves['cavern_well']['inflow_mdot'].sum())
+        self.assertAlmostEqual(-0.5, mdot_cavern.sum())
+        
+        
+        
         self.inputs = {'initial':{'fluid':'H2'},
                        'wells':{'cavern_well':{'valves':{'inflow_mdot':
-                            {'type':'mdot','reservoir':{'fluid':'H2','mdot':[0,100],'time':[0,10]}}}}}}
+                            {'type':'mdot','reservoir':{'fluid':'H2'},'mdot':[0,10],'time':[0,100]}}}}}
             
-        fluid_components, fluids, mdots = find_all_fluids(self)
+        fluid_components, fluids, mdots, molar_masses = find_all_fluids(self)
         self.fluid_components = fluid_components
         self.fluids = fluids
         
@@ -105,31 +127,55 @@ class TestUtilities(unittest.TestCase):
         
         self.inputs = {'initial':{'fluid':'H2[0.5]&Methane[0.25]&H2O[0.25]'},
                        'wells':{'cavern_well':{'valves':{'inflow_mdot':
-                            {'type':'mdot','reservoir':{'fluid':'CO2','mdot':[0,100],'time':[0,10]}}}}}}
+                            {'type':'mdot','reservoir':{'fluid':'CO2'},'mdot':[0,10],'time':[0,100]}}}}}
         
-        fluid_components2, fluids2, mdots2 = find_all_fluids(self)
+        fluid_components2, fluids2, mdots2, molar_masses2 = find_all_fluids(self)
         
         self.assertListEqual(fluid_components2, ['CarbonDioxide', 'Hydrogen',
                                                  'Methane', 'Water'])
         
-        # include a valve that has no effect
-        self.inputs = {'initial':{'fluid':'H2[0.5]&Methane[0.25]&H2O[0.25]'},
-                       'wells':{'cavern_well':{'valves':{'inflow_mdot':
-                            {'type':'mdot','reservoir':{'fluid':'CO2','mdot':[0,100],'time':[0,10]}},
-                                            'mdot2_valve':{'type':'mdot','reservoir':{'fluid':'N2[0.1]&Butane[0.9]'},'mdot':[0,100],'time':[0,10]}}}}}
-            
-        fluid_components3, fluids3, mdots3 = find_all_fluids(self)
+
         
-        self.assertListEqual(fluid_components3, ['CarbonDioxide', 'Nitrogen',
-                                                 'n-Butane', 'Hydrogen', 
-                                                 'Methane', 'Water'])
+    def test_calculate_component_masses(self):
+        molar_masses = {"Water":0.01801528,
+                        "Hydrogen":0.002016,
+                        "Methane":0.01604}
         
-        mdot_valves, mdot_cavern = reservoir_mass_flows(self,5.0)
+        
+        fluid = CP.AbstractState("HEOS", "H2&Methane&H2O")
+        fluid.set_mole_fractions([0.05,0.45,0.5])
+        fluid.update(CP.PT_INPUTS,1e5,323)
+        
+        masses = calculate_component_masses(fluid,molar_masses,1.0,1.0)
+        
+        self.assertLess(np.abs((masses['gas']-np.array([0.01174723, 0.84118509, 0.14706768])).sum()), 1e-8)
+        self.assertLess(np.abs((masses['liquid']-np.array([7.79216576e-14, 2.98311663e-07, 9.99999702e-01])).sum()), 1e-8)
+        
+        fluid = CP.AbstractState("HEOS", "H2O")
+        fluid.set_mole_fractions([1.0])
+        fluid.update(CP.PT_INPUTS,1e5,400)
+        
+        with self.assertRaises(ValueError):
+            masses2 = calculate_component_masses(fluid,molar_masses,gas_mass=1.0,liquid_mass=1.0)
+        
+        masses2 = calculate_component_masses(fluid,molar_masses,gas_mass=1.0)
+        
+        self.assertAlmostEqual(masses2['gas'][0], 1.0)
+        self.assertAlmostEqual(masses2['liquid'][0], 0.0)
+        
+        fluid = CP.AbstractState("HEOS", "H2O")
+        fluid.set_mole_fractions([1.0])
+        fluid.update(CP.PT_INPUTS,1e5,283)
+        
+        with self.assertRaises(ValueError):
+            masses3 = calculate_component_masses(fluid,molar_masses,gas_mass=1.0,liquid_mass=1.0)
+        
+        masses3 = calculate_component_masses(fluid,molar_masses,liquid_mass=1.0)
+        
+        self.assertAlmostEqual(masses3['gas'][0], 0.0)
+        self.assertAlmostEqual(masses3['liquid'][0], 1.0)
         
         pass
-        
-        
-
         
     
 

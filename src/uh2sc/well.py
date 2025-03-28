@@ -9,10 +9,12 @@ import numpy as np
 from CoolProp import CoolProp as CP
 from uh2sc.constants import Constants as const
 from uh2sc.transport import annular_nusselt, circular_nusselt
+from uh2sc.utilities import (calculate_component_masses)
+from uh2sc.abstract import AbstractComponent
 #from uh2sc.hdclass import ImplicitEulerAxisymmetricRadialHeatTransfer
 
 
-class Well(object):
+class Well(AbstractComponent):
 
     """
     A series of Vertical pipes of increasing or equal lengths starting with the longest
@@ -34,12 +36,21 @@ class Well(object):
 
     """
 
-    def __init__(self,well_dict,P0,T0,molefracs,comp):
+    def __init__(self,well_name,well_dict,model,global_indices):
 
         """
         CP - cool props object
         """
+        self._gindices = global_indices
         self.input = well_dict
+        self._model = model
+        
+        self._number_fluids = len(model.fluids['cavern'].fluid_names())
+        
+        
+        P0 = model.inputs['initial']['pressure']
+        T0 = model.inputs['initial']['temperature']
+      
 
         if not "ideal_pipes" in well_dict:
             self.input["ideal_pipes"] = False
@@ -53,33 +64,12 @@ class Well(object):
                        for length in well_dict["pipe_lengths"]]
         pidx = range(len(pipe_materials))
 
-        Pres_dict = {}
-        Tres_dict = {}
-        molefracs_dict = {}
-        comp_dict = {}
-        for vname, valve in well_dict["valves"].items():
-            if "reservoir" in valve:
-                Pres_dict[vname] = valve["reservoir"]["pressure"]
-                Tres_dict[vname] = valve["reservoir"]["temperature"]
-
-                comp_f, molefracs_f, compSRK_f = process_CP_gas_string(valve["reservoir"]["fluid"])
-
-            else:
-                Pres_dict[vname] = P0
-                Tres_dict[vname] = T0
-                comp_f = comp
-                molefracs_f = molefracs
-
-
-            molefracs_dict[vname] = molefracs_f
-            comp_dict[vname] = comp_f
 
         # establish individual pipes
         # TODO - make the height and length be able to be different
         # (for non-straight or angled pipes)
-        pipes = {valve_name:VerticalPipe(
-                              molefracs,
-                              comp,
+        pipes = {valve_name:VerticalPipe(self,
+                              model.fluids[well_name][valve_name],
                               length,
                               length,
                               pipe_mat,
@@ -130,6 +120,105 @@ class Well(object):
         else:
             for pname, pipe in self.pipes.items():
                 pipe.step(cavern_obj,wname,i)
+                
+    @property
+    def global_indices(self):
+        """
+        This property must give the indices that give the begin and end location
+        in the global variable vector (xg)
+        """
+        return self._gindices
+
+    @property
+    def previous_adjacent_components(self):
+        """
+        Interface variable indices for the previous component
+        """
+        prev_comp = {}
+        for wname, well in self._prev_components:
+            prev_comp[wname] = self._model.components[wname]
+        return prev_comp
+            
+
+    @property
+    def next_adjacent_components(self):
+        """
+        interface variable indices for the next component which can only be 
+        1 GHE for a cavern (even though this is written as a loop)
+        """
+        next_comp = {}
+        for ghe_name, ghe in self._next_components.items():
+            next_comp[ghe_name] = self._model.components[ghe_name]
+        return next_comp
+        
+        
+    @property
+    def component_type(self):
+        """
+        A string that allows the user to identify what kind of component 
+        this is so that specific properties and methods can be invoked
+
+        """
+
+
+    def evaluate_residuals(self,x=None):
+        """
+        Must first evaluate all interface equations for indices produced by interface_var_ind_prev_comp
+
+        Then must evaluate all internal component equations
+        
+        Equations for the salt cavern
+        
+        Energy flow
+
+
+        Args:
+            x numpy.array : global x vector for the entire
+                             differiental/algebraic system
+                             
+                
+        This is a dynamic ODE implicit solution via euler integration
+
+
+
+
+        Inputs:
+        =======
+            Variables:
+            Local Index 0 = Q0 - flux into the system
+            Local Inices 1 to num_element + 2 Tgvec:
+                vector of ground temperatures spaced radially from the GSHX
+            Local Index Qend - flux out of the system (ussually fixed to 0.0)
+
+        Parameters:
+
+            Tgvec_m1 - Tgvec for the previous time step
+
+        Returns
+        =======
+            residuals - error level from solving the implicit equations
+                        np.array of length number_elements + 1
+                
+        """
+        pass
+    
+    def get_x(self):
+        x = []
+        for pname, pipe in self.pipes.items():
+            x += list(pipe.mass_rates[-1])
+            x += [pipe.temp_fluid[0]]
+            x += [pipe.pres_fluid[0]]
+            x += [pipe.temp_fluid[1]]
+            x += [pipe.pres_fluid[1]]
+        return np.array(x)
+
+
+    def load_var_values_from_x(self,xg):
+        breakpoint()
+        xloc = xg[self.global_indices]
+        for name, pipe in self.pipes.items():
+            pipe.mass_rates = np.array([xloc[0:self._number_fluids]])
+
 
 
 
@@ -206,8 +295,8 @@ class VerticalPipe(object):
     """
 
     def __init__(self,
-                 molefracs,
-                 comp,
+                 well,
+                 fluid,
                  length,
                  height_change,
                  pipe_material,
@@ -225,19 +314,20 @@ class VerticalPipe(object):
         """
         Inputs
         ------
-        molefracs : list[floats] :
-            contains the proportions of each gas present
-
-        comp : str :
-            contains a list of the gas types delimited by "&" symbols
-            the string must have len(molefrac) = len(comp.split("&"))
+        well : uh2sc.well.Well - the well this pipe is in.
+        
+        fluid : CoolProp.CoolProp.AbstractState - the fluid mixture (or pure_fluid)
+                being moved through the pipe. This fluid is created at the model
+                level so that it contains every pure_fluid throughout the entire
+                model even if the molefractions are zero.
 
         length : float :
             Length of the vertical pipe
 
         height_change : float :
             Total vertical distance the length covers. If height_change < length
-            then the pipe is diagonal and not purely vertical.
+            then the pipe is diagonal and not purely vertical. This simulation only
+            approximates pipes with no more than 10 deg off from vertical.
 
         pipe_material : uh2sc.well.PipeMaterial :
             class carrying all of the parameters needed to analyze the pipe material
@@ -295,18 +385,13 @@ class VerticalPipe(object):
             ValueError - on input values that are incorrect
             TypeError - on input types that are incorrect
         """
-        # input checking.
+        # input checking. NOTE: needs to be in the input validation instead of
+        # here!
+        self._well = well
+        
         if height_change > length:
             raise ValueError("The height change must be equal to or less than the pipe length")
-        if not isinstance(comp, str):
-            raise TypeError("The 'comp' input must be a string of valid"+
-                            " CoolProp fluid names with '&' between them!")
 
-
-        if len(comp.split("&")) != len(molefracs):
-            raise ValueError("The 'molefracs' input must have the same "+
-                             "number of entries as indicated in the "+
-                             "'comp' input string!")
 
         self.height_change = height_change
         self.length = length
@@ -319,22 +404,20 @@ class VerticalPipe(object):
         self.num_cv = int(number_control_volumes)
         self.min_loss = total_minor_losses_coefficient
         self.D_h, self.area = self._hydraulic_diameter()
-        self.fluid = CP.AbstractState("HEOS", comp)
+        self.fluid = fluid
         self.fluid.specify_phase(CP.iphase_gas)
-
-        self.fluid.set_mole_fractions(molefracs)
-
 
         self.fluid.update(CP.PT_INPUTS, initial_pressure,
                                         initial_temperature)
-
-        self.molefracs = molefracs
-        self.comp = comp
+        self._number_fluids = len(self.fluid.fluid_names())
         self.valve = valve
         self.valve_name = valve_name
         self.L_cv = length / number_control_volumes
         self.L_cv_o2 = self.L_cv / 2
-
+        num_cv_p_1 = int(number_control_volumes + 1)
+        self.num_cv = int(number_control_volumes)
+        
+        
         # more input checking
         if valve['type'] != "mdot":
             raise NotImplementedError("Only mdot valves are currently developed")
@@ -342,14 +425,22 @@ class VerticalPipe(object):
             raise ValueError("mdot valves must have a time value of 0.0 for all start times!")
         else:
             mass_rate0 = valve['mdot'][0]
-
+            # mass balance for each gaseous fluid.
+            if well is not None: # None in model call that just needs initial_adiabatic_column function
+                mass_rates = calculate_component_masses(self.fluid,
+                                                       self._well._model.molar_masses,
+                                                       gas_mass=mass_rate0,
+                                                       liquid_mass=0.0)['gas']
+            else:
+                mass_rates = np.zeros((num_cv_p_1))
+                
         # state variables
-        num_cv_p_1 = int(number_control_volumes + 1)
-        self.num_cv = int(number_control_volumes)
+
         self.temp_fluid, self.pres_fluid = self.initial_adiabatic_static_column(initial_temperature,
                                                             initial_pressure,
                                                             mass_rate0)
-        self.mass_rate = mass_rate0 * np.ones(num_cv_p_1)
+
+        self.mass_rates = mass_rate0 * np.ones([num_cv_p_1,self._number_fluids])
 
         # TODO, mass_loss is a place holder. it is not developed.
         self.mass_loss = np.zeros(int(number_control_volumes))

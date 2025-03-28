@@ -64,64 +64,25 @@ def Pr(T, P, species):
     return Pr
 
 
-def Nu(Ra, Pr):
+def natural_convection_nu(rayleigh_number, prandtl_number):
     """
     Calculation of Nusselt number for natural convection. See eq. 4.7-4  and Table 4.7-1 in
     C. J. Geankoplis Transport Processes and Unit Operations, International Edition,
     Prentice-Hall, 1993
-
-    Parameters
-    ----------
-    Ra : float
-        Raleigh number
-    Pr : float 
-        Prandtl number
-
-    Returns
-    ----------
-    Nu : float
-        Nusselt numebr
-    """
-    if Ra >= 1e9:
-        NNu = 0.13 * Ra ** 0.333
-    elif Ra < 1e9 and Ra > 1e4:
-        NNu = 0.59 * Ra ** 0.25
-    else:
-        NNu = 1.36 * Ra ** 0.20
-    return NNu
-
-def h_inside(L, Tvessel, Tfluid, fluid):
-    """
-    Calculation of internal natural convective heat transfer coefficient from Nusselt number
-    and using the coolprop low level interface.
-
-    Parameters
-    ----------
-    L : float
-        Vessel length
-    Tfluid : float
-        Temperature of the bulk fluid inventory
-    Tvessel : float 
-        Temperature of the vessel wall (bulk) 
-    fluid : obj
-        Coolprop fluid object 
     
-    Returns
-    ----------
-    h_inner : float
-        Heat transfer coefficient
+    TODO - use your own references for this calculation
+
     """
-    cond = fluid.conductivity()
-    visc = fluid.viscosity()
-    cp = fluid.cpmass()
-    Pr = cp * visc / cond
-    beta = fluid.isobaric_expansion_coefficient()
-    nu = visc / fluid.rhomass()
-    Gr = 9.81 * beta * abs(Tvessel - Tfluid) * L ** 3 / nu ** 2
-    Ra = Pr * Gr
-    NNu = Nu(Ra, Pr)
-    h_inner = NNu * cond / L
-    return h_inner
+    if rayleigh_number >= 1e9:
+        nusselt_number = 0.13 * rayleigh_number ** 0.333
+    elif rayleigh_number < 1e9 and rayleigh_number > 1e4:
+        nusselt_number = 0.59 * rayleigh_number ** 0.25
+    else:
+        nusselt_number = 1.36 * rayleigh_number ** 0.20
+    return nusselt_number
+
+
+
 
 def Pr_fluid(fluid):
     cond = fluid.conductivity()

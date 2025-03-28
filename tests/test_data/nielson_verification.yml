@@ -8,7 +8,7 @@ wells:  # an arbitrary number of wells can be defined that can pull and push dif
         # each well can have multiple pipes such that a single well can inject and withdraw at the same time.
   cavern_well:
     ideal_pipes: true  # override everything else such that there are no energy losses along the pipes.
-    control_volume_length: 1304.8
+    control_volume_length: 1304.8 # MUST BE THE SAME AS PIPE LENGTHS FOR THE CURRENT VERSION!
     pipe_lengths: [1304.8] # meters must be
     pipe_diameters: [0.0,0.0,0.1,0.12] # meters
     pipe_thermal_conductivities: [45] # W/m/K
@@ -22,7 +22,8 @@ wells:  # an arbitrary number of wells can be defined that can pull and push dif
         reservoir:
           pressure: 8000000.0
           temperature: 310.92777777777777775
-          fluid: 'H2'
+          fluid: 'H2' # Though you can make any mixture of gasses here, read CoolProp's documentation. You can get completely unrealistic results with untested arbitrary mixtures of fluid!!!
+                      # http://www.coolprop.org/fluid_properties/Mixtures.html#binary-pairs WARNING IN CoolProp:
 ghes:
   nielson_ghe:
     distance_to_farfield_temp: 600.0 # meters - calibration term
@@ -31,17 +32,18 @@ ghes:
     heat_capacity: 837.2 #J/kg/K salt heat capacity
     thermal_conductivity: 5.190311418685122 # W/m/K see https://doi.org/10.1016/j.renene.2021.11.080
                                             #for examples this is for 100 C
-    modeled_radial_thickness: 100.0 # The "vessel" is now a layer of salt that is modeled
+    modeled_radial_thickness: 100.0 # hollow cylinder thickness of salt that is modeled
     initial_conditions:
       Q0: 0.0
       Qend: 0.0
     number_elements: 400
-initial:  # IN THIS EXAMPLE, THESE ARE OVERWRITTEN FOR SEVERAL DIFFERENT RUNS!
+initial:  #
   temperature: 326.5
   pressure: 9000000.0 #Pascal
   fluid: "H2"
   start_date: "2023-01-01" # Must be in iso format "YYYY-MM-DD"
-  liquid_height: 0.0
+  liquid_height: 1.0 # in meters
+  liquid_temperature: 322.5 # ussually 2-4 C cooler than the gas
 calculation:
   time_step: 300.0 # seconds
   end_time: 2628000.0 # This will change by code input!
