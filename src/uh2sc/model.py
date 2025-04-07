@@ -10,7 +10,7 @@ from uh2sc import validator
 from uh2sc.errors import InputFileError, NewtonSolverError
 from uh2sc.solvers import NewtonSolver
 from uh2sc.abstract import AbstractComponent, ComponentTypes
-from uh2sc.hdclass import ImplicitEulerAxisymmetricRadialHeatTransfer
+from uh2sc.ghe import ImplicitEulerAxisymmetricRadialHeatTransfer
 from uh2sc.utilities import (process_CP_gas_string, 
                              reservoir_mass_flows, 
                              find_all_fluids,

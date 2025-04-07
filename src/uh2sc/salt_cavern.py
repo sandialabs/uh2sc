@@ -7,27 +7,20 @@ Created on Wed Oct 18 17:20:21 2023
 
 import pandas as pd
 import numpy as np
-import yaml
 
 from CoolProp import CoolProp as CP
 
 from uh2sc.abstract import AbstractComponent
-from uh2sc.hdclass import HydDown
-from uh2sc.utilities import (reservoir_mass_flows, 
-                             calculate_component_masses,
-                             brine_average_pressure)
+from uh2sc.utilities import calculate_component_masses
 from uh2sc.constants import Constants
 from uh2sc.thermodynamics import (density_of_brine_water, 
-                                  brine_saturated_pressure, 
                                   solubility_of_nacl_in_h2o)
-from uh2sc.hdclass import ImplicitEulerAxisymmetricRadialHeatTransfer
+from uh2sc.ghe import ImplicitEulerAxisymmetricRadialHeatTransfer
 from uh2sc.well import Well
 from uh2sc.transport import natural_convection_nu
 
 
 const = Constants()
-
-
 
 class SaltCavern(AbstractComponent):
 
