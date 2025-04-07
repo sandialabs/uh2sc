@@ -39,6 +39,11 @@ cavern:
       min: 0.0
       required: true
       type: number
+    emissivity:
+      max: 1.0
+      min: 0.0
+      required: true
+      type: number
     ghe_name:
       type: string
       required: false #perfectly insulated if none exists.

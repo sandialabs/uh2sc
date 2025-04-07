@@ -4,6 +4,7 @@ cavern:
   height: 304.8 # meters
   diameter: 25.76033180350307 # meters
   ghe_name: nielson_ghe
+  emissivity: 0.99 # water and halite are really good emitters.
 wells:  # an arbitrary number of wells can be defined that can pull and push different gasses into the well simultaneously
         # each well can have multiple pipes such that a single well can inject and withdraw at the same time.
   cavern_well:

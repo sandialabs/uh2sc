@@ -200,7 +200,7 @@ class Well(AbstractComponent):
                         np.array of length number_elements + 1
                 
         """
-        pass
+        return np.array([])
     
     def get_x(self):
         x = []
@@ -218,6 +218,9 @@ class Well(AbstractComponent):
         xloc = xg[self.global_indices]
         for name, pipe in self.pipes.items():
             pipe.mass_rates = np.array([xloc[0:self._number_fluids]])
+            
+    def shift_solution(self):
+        pass
 
 
 

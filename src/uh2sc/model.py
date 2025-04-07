@@ -116,9 +116,8 @@ class Model(AbstractComponent):
             solver_converged = bool(tup[0])
             if solver_converged:
                 # update the state of the model
-                for cname, component in self.components.items():
-                    if component.component_type == ComponentTypes(2).name:
-                        component.shift_solution()
+                self.shift_solution()
+
                 
                 # gather the results
                 self._solutions[time] = {}
@@ -175,7 +174,11 @@ class Model(AbstractComponent):
 
                 # this is the single x behavior used by
                 # local evaluations of residuals
-                residuals += list(component.evaluate_residuals())
+                try:
+                    residuals += list(component.evaluate_residuals())
+                except:
+                    breakpoint()
+                    pass
                 
             return np.array(residuals)
         else:
@@ -202,6 +205,11 @@ class Model(AbstractComponent):
     def load_var_values_from_x(self, xg_new):
         for cname, component in self.components.items():
             component.load_var_values_from_x(xg_new)
+            
+    def shift_solution(self):
+        for cname, component in self.components.items():
+            component.shift_solution()
+
 
 
     def _build(self,num_caverns,num_wells,num_ghes):
@@ -261,8 +269,10 @@ class Model(AbstractComponent):
         # also assigns self.fluid_components which is the list of all pure fluids
         # that exist in the model and is used to define equations
         # sets self.molar_masses and others!
-        find_all_fluids(self)
-        self.num_material = len(self.molar_masses)
+        if "wells" in self.inputs:
+            # if not, then we are in a test mode.
+            find_all_fluids(self)
+            self.num_material = len(self.molar_masses)
         
         if num_caverns != 0:
             self._build_cavern(xg_descriptions,xg,components)
@@ -287,7 +297,9 @@ class Model(AbstractComponent):
         self.xg_descriptions = xg_descriptions
         self.xg = np.array(xg)
         self.components = components
-        self._connect_components()
+        
+        if 'cavern' in self.inputs:
+            self._connect_components()
 
 
     def _build_ghes(self,x_desc,xg,components):

@@ -74,6 +74,10 @@ class AbstractComponent(ABC):
     @abstractmethod
     def load_var_values_from_x(self,xg):
         pass
+    
+    @abstractmethod
+    def shift_solution(self):
+        pass
 
     def evaluate_jacobian(self,x=None):
         # must do this numerically and we follow the same routine

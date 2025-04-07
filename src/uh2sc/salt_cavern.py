@@ -4,6 +4,7 @@ Created on Wed Oct 18 17:20:21 2023
 
 @author: dlvilla
 """
+
 import pandas as pd
 import numpy as np
 import yaml
@@ -23,11 +24,12 @@ from uh2sc.hdclass import ImplicitEulerAxisymmetricRadialHeatTransfer
 from uh2sc.well import Well
 from uh2sc.transport import natural_convection_nu
 
+
 const = Constants()
 
 
 
-class SaltCavern(AbstractComponent, HydDown):
+class SaltCavern(AbstractComponent):
 
     """
     This uses a much abridged version of HyDown functionality and adds radial
@@ -124,19 +126,33 @@ class SaltCavern(AbstractComponent, HydDown):
     def __str__(self):
         return "Salt Cavern Object"
 
-    def __init__(self,input_dict,global_indices,model):
+    def __init__(self,input_dict,global_indices,model,include_fault_analytics=False):
         # this includes validation of the input dictionary which must follow
         # the main schema in validatory.py
         # do stuff relevant to model
         T0 = input_dict['initial']['temperature']
         T0brine = input_dict['initial']['liquid_temperature']
         p0 = input_dict['initial']['pressure']
+        self._STEFAN_BOLTZMANN = const.stefan_boltzman['value']
         
         #pure water for brine calculations
         water = CP.AbstractState("HEOS","Water")
-        water.update(CP.PT_INPUTS,p0,T0)
-        water.set_mole_fractions([1.0])
+        water.update(CP.PT_INPUTS,p0,T0brine)
+        water.set_mass_fractions([1.0])
+        self._height_brine = input_dict['initial']['liquid_height']
+        self._height_total = input_dict["cavern"]["height"]
+        self._fluid = model.fluids['cavern']
+        self._fluid.update(CP.PT_INPUTS, input_dict['initial']['pressure'],
+                                         input_dict['initial']['temperature'])
+        
+        delp_brine = 0.5 * const.g['value'] * (water.rhomass() * self._height_brine  + (self._height_total - self._height_brine) * self._fluid.rhomass())
+        water.update(CP.PT_INPUTS,p0 + delp_brine,T0brine)
+
         self._water = water
+        water_m1 = CP.AbstractState("HEOS","Water")
+        water_m1.update(CP.PT_INPUTS,p0 + delp_brine,T0brine)
+        water_m1.set_mass_fractions([1.0])
+        self._water_m1 = water_m1
         
         # time and indices
         self._time = 0
@@ -144,18 +160,24 @@ class SaltCavern(AbstractComponent, HydDown):
         self._first_step = True
         self._step_num = 0.0
         self._gindices = global_indices
-        self._fluid = model.fluids['cavern']
-        self._fluid.update(CP.PT_INPUTS, input_dict['initial']['pressure'],
-                                         input_dict['initial']['temperature'])
+
+        _fluid_m1 = CP.AbstractState("HEOS","&".join(self._fluid.fluid_names()))
+        _fluid_m1.set_mass_fractions(self._fluid.get_mass_fractions())
+        _fluid_m1.update(CP.PT_INPUTS, input_dict['initial']['pressure'],
+                                       input_dict['initial']['temperature'])
+
+        self._fluid_m1 = _fluid_m1
         self._number_fluids = len(model.fluids['cavern'].fluid_names())
         
         #initial geometry
-        self._area_horizontal = np.pi * input_dict['cavern']['diameter']**2/4
+        self._diameter = input_dict['cavern']['diameter']
+        self._area_horizontal = np.pi * self._diameter**2/4
         self._area_vertical = np.pi * input_dict['cavern']['diameter'] * input_dict["cavern"]["height"]
-        self._height_total = input_dict["cavern"]["height"]
-        self._height_brine = input_dict['initial']['liquid_height']
+        
+        
         self._vol_brine = self._height_brine * self._area_horizontal
         self._vol_cavern = (self._height_total - self._height_brine) * self._area_horizontal
+        
         
         # temperature and pressure states
         self._t_cavern_m1 = T0
@@ -168,10 +190,9 @@ class SaltCavern(AbstractComponent, HydDown):
         self._t_cavern_wall = T0
         self._t_brine = T0brine
         self._t_brine_wall = T0brine
+        self._emissivity = input_dict['cavern']['emissivity']
         (self._p_brine, solubility_brine,
-         rho_brine) = brine_average_pressure(self._fluid,self._water, 
-                                             self._height_total, 
-                                             self._height_brine, self._t_brine)
+         rho_brine) = self._brine_average_pressure(self._fluid,self._water)
         
 
         self._m_brine = self._vol_brine * rho_brine
@@ -197,20 +218,23 @@ class SaltCavern(AbstractComponent, HydDown):
         self._model = model
 
         self.cavern_results = {val: [] for val in self._result_name_map.values()}
+        
+        # troubleshooting
+        self._include_fault_analytics = include_fault_analytics
 
 
-    def _brine_average_pressure(self):
+    def _brine_average_pressure(self,fluid,water):
         """
         Approximate the average pressure for the brine
         
         """
         # TODO: create a test for this!
-        pres_g = self._fluid.p()
-        rho_g = self._fluid.rhomass()
+        pres_g = fluid.p()
+        rho_g = fluid.rhomass()
         # assume density is constant
         height_gas_o_2 = (self._height_total - self._height_brine)/2
         pres_g_surf = pres_g + rho_g * const.g['value'] * height_gas_o_2
-        rho_pure_water = self._water.rhomass()
+        rho_pure_water = water.rhomass()
         height_brine_o_2 = self._height_brine / 2
         solubility_brine = solubility_of_nacl_in_h2o(self._t_brine)
         rho_brine = density_of_brine_water(self._t_brine, pres_g_surf, solubility_brine, rho_pure_water)
@@ -326,7 +350,7 @@ class SaltCavern(AbstractComponent, HydDown):
         """
         
         # The equations are
-        breakpoint()
+
         # THIS IS WHERE YOU STOPPED, BELOW YOU HAVE AN INCOMPLETE AND VERY
         # LONG SET OF EQUATIONS TO MATCH AND CALCULATE RESIDUALS FOR
         # MASS IS COMPLETE, GHE WALL FLUX IS COMPLETE, BRINE MASS IS COMPLETE
@@ -361,6 +385,14 @@ class SaltCavern(AbstractComponent, HydDown):
         # self._wells_pres = {}
         
         residuals = np.zeros(self._NUM_EQN)
+        _eqn = 0
+        
+        # geometry
+        height_total = self._height_total
+        height_brine = self._height_brine
+        height_cavern = (height_total-height_brine)
+        diameter_cavern = self._diameter
+        brine_area = self._area_horizontal
         
         # Inititialise / setting initial values for t=0
         
@@ -372,6 +404,15 @@ class SaltCavern(AbstractComponent, HydDown):
 
         fluid_total_mass_flow = np.zeros(self._number_fluids)
         fluid_total_energy_flow = np.zeros(self._number_fluids)
+        #TODO add well capability that allows brine to be pumped into and out of 
+        #     the cavern
+        brine_total_mass_flow = 0.0
+        brine_salinity = 0.0
+        brine_total_energy_flow = 0.0
+        
+        hmass_cavern_m1 = self._fluid_m1.hmass()
+        hmass_cavern = self._fluid.hmass()
+        
         # equation 0-num_fluid-1 conservation of each component's mass
         for wname, well_mdot in self._wells_mdot.items():
             for vname, v_mdot in well_mdot.items():
@@ -380,74 +421,90 @@ class SaltCavern(AbstractComponent, HydDown):
                 fluid.update(CP.PT_INPUTS,
                              self._wells_pres[wname][vname],
                              self._wells_temp[wname][vname])
+                hmass_arr = np.array([fluid.hmass() if v_mdot[idx] > 0.0
+                                      else self._fluid.hmass() 
+                                      for idx in range(self._number_fluids)])
                 hmass = fluid.hmass()
-                fluid_total_energy_flow += hmass * v_mdot
+                fluid_total_energy_flow += hmass_arr * v_mdot
+        
+        
+        
         
         ### --- CONSERVATION OF MASS --- ###
         # conservation of mass for each fluid
+        
+        # find vapor mass change due to condensation (and settling to the brine)
+        # or evaporation
+        p_brine = self._water.p()
+        self._water.update(CP.QT_INPUTS,1.0,self._t_cavern)
+        rho_vapor = self._water.rhomass()
+        self._water_m1.update(CP.QT_INPUTS,1.0,self._t_cavern_m1)
+        rho_vapor_m1 = self._water.rhomass()
+        # brine pressure
+        p_brine_m1, solubility_brine_m1, rho_brine_m1 = self._brine_average_pressure(self._fluid_m1,self._water_m1)
+        #evaluate again to get a better answer (pressure dependence is low enough to not warrant convergence)
+        p_brine, solubility_brine, rho_brine = self._brine_average_pressure(self._fluid, self._water)
+        
+        
+        
+        self._mass_vapor = rho_vapor * self._vol_cavern
+        self._mass_fraction_vapor = self._mass_vapor / (self._m_cavern.sum() + self._mass_vapor)
+        self._mass_fractions_non_vapor = self._m_cavern / (self._m_cavern.sum() + self._mass_vapor)
+        mass_change_vapor = (rho_vapor - rho_vapor_m1) * self._vol_cavern
+        
         residuals[0:self._number_fluids] = (fluid_total_mass_flow * self._dt 
                                             + self._m_cavern_m1 
                                             - self._m_cavern)
-        cfluid = self._model.fluids['cavern']
-        cfluid.update(CP.PT_INPUTS,self._p_cavern_m1,self._t_cavern_m1)
-        hmass_cavern_m1 = cfluid.hmass()
-        cfluid.update(CP.PT_INPUTS,self._p_cavern,self._t_cavern)
-        hmass_cavern = cfluid.hmass()
+        _eqn = self._number_fluids
+
+
         
         ### -----   WALL HEAT FLUX MATCH TO GHE's ----- ###
         q_axi_total = np.array(self._q_axisym).sum()
         
-        ht_coef_wall = self._wall_ht_coef(self.height_total-self.height_brine,cfluid)
+        ht_coef_wall = self._wall_ht_coef(height_cavern,self._fluid)
         # TODO, you are just using water, you need it to be brine! maybe you should
         # write a class that inherits from the CoolProp Abstract state but incorporates
         # the brine properties when needed.
-        ht_coef_brine_wall = self._wall_ht_coef(self.height_brine,self._water)
+        ht_coef_brine_wall = self._wall_ht_coef(height_brine,self._water)
 
         # same as above
         q_cavern_wall = ((self._area_horizontal + self._area_vertical * 
-                          (1 - (self._height_total-self._height_brine)/
-                           self._height_total))
+                          (1 - height_cavern/
+                           height_total))
             * ht_coef_wall
             * (self._t_cavern_wall - self._t_cavern))
         
-        q_cavern_brine_wall = ((self._area_horizontal + self._area_vertical * 
-                               self._height_brine / self._height_total)
+        q_brine_wall = ((self._area_horizontal + self._area_vertical * 
+                               height_brine / height_total)
                                * ht_coef_brine_wall
                                * (self._t_brine_wall - self._t_brine))
         
         # ----  HEAT TO GHE ---- #
-        # heat flux balancer between axisymmetric heat transfer (perhpas more than one
+        # heat flux balance between axisymmetric heat transfer (perhpas more than one
         # along the cavern)
-        residuals[self._number_fluids] = -q_cavern_wall - q_cavern_brine_wall + q_axi_total
-            
-        
-        # vapor pressure of brine in cavern
-        p_brine_m1, solubility_brine_m1, rho_brine_m1 = brine_average_pressure(cfluid,self._water,self._height_total,self._height_brine,self._t_brine)
-        self._water.update(CP.PT_INPUTS,p_brine_m1,self._t_brine)
-        #evaluate again to get a better answer (pressure dependence is low enough to not warrant convergence)
-        p_brine, solubility_brine, rho_brine = brine_average_pressure(cfluid,self._water,self._height_total,self._height_brine,self._t_brine)
-        self._water.update(CP.PT_INPUTS,p_brine,self._t_brine)
+        # TODO - this is only going to work with one ground heat exchanger. If you want to
+        # stack ground heat exchangers (to capture temperature gradient), then you 
+        # need to update this.
+        residuals[_eqn] = -q_cavern_wall - q_brine_wall + q_axi_total
+        _eqn += 1
+        # ----  GHE temperature ---- #
+        # The weighted average of the cavern and brine wall temperatures is equal to the GHE wall temperature
+        # This is written as would be expected but doesn't consider different depths 
+        # for GHE's
+        for t_axisym in self._t_axisym:
+            residuals[_eqn] = ((-self._t_cavern_wall 
+                                                   * height_cavern 
+                                                   + self._t_brine_wall 
+                                                   * height_brine)
+                                                  /height_total 
+                                                  - t_axisym)
+            _eqn += 1
         
 
         
         # TODO calculate change in cavern volume as brine is added or
         # subtracted, this is not yet done but is easy to add.
-        
-        # change in vapor pressure - is compensated by either condensation 
-        # (negative vapor pressure change) which adds heat to the cavern gas
-        # or evaporation (positive vapor pressure change) whichs takes heat away
-        # from the brine
-        # vp_brine = brine_saturated_pressure(self._t_brine,solubility_brine,self._water)
-        # self._water.update(CP.PT_INPUTS,p_brine_m1,self._t_brine_m1)
-        # vp_brine_m1 = brine_saturated_pressure(self._t_brine_m1,solubility_brine_m1,self._water)
-        
-        # find vapor mass change 
-        self._water.update(CP.QT_INPUTS,1.0,self._t_cavern)
-        rho_vapor = self._water.rhomass()
-        self._water.update(CP.QT_INPUTS,1.0,self._t_cavern_m1)
-        rho_vapor_m1 = self._water.rhomass()
-        
-        mass_change_vapor = (rho_vapor - rho_vapor_m1) * self._vol_cavern
         
         # CALCULATE VAPOR ENERGY EFFECTS
         
@@ -457,151 +514,52 @@ class SaltCavern(AbstractComponent, HydDown):
         self._water.update(CP.QT_INPUTS,1.0,(self._t_cavern+self._t_cavern_m1)/2)
         h_vapor_1 = self._water.hmass()
         h_evaporate = h_vapor_1 - h_vapor_0
+        self._water.update(CP.PT_INPUTS,p_brine,self._t_brine)
         
         if mass_change_vapor > 0.0:
-            E_vapor_brine = -h_evaporate * mass_change_vapor
-            E_vapor_cavern = 0.0
+            e_vapor_brine = -h_evaporate * mass_change_vapor
+            e_vapor_cavern = 0.0
         else:
-            E_vapor_brine = 0.0
+            e_vapor_brine = 0.0
             # comes out positive since mass_change_vapor is negative
-            E_vapor_cavern = -h_evaporate * mass_change_vapor
+            e_vapor_cavern = -h_evaporate * mass_change_vapor
         
-        #TODO
-        # brine-cavern transfers (conduction, convection, radiation)
+        # CALCULATION RADIATION ENERGY TRANSFER FROM BRINE TO CAVERN WALLS
+        f12 = self._radiation_vf(diameter_cavern,height_cavern)
+        q_rad = (f12 
+                 * self._emissivity 
+                 * self._STEFAN_BOLTZMANN 
+                 * self._area_horizontal 
+                 * (self._t_cavern ** 4 
+                 - self._t_brine ** 4))
         
+
         ### -----   ENERGY    ----  ###
         #cavern
-        residuals[self._number_fluids+1] = self._dt * (fluid_total_energy_flow + 
-                                                       q_cavern_wall +
-                                                       q_cavern_brine_wall +
-                                                       
+        residuals[_eqn] = (self._dt 
+                           * (fluid_total_energy_flow 
+                           + q_cavern_wall
+                           - q_rad) 
+                           + e_vapor_cavern)
+        _eqn += 1                                            
         #brine
+        residuals[_eqn] = (self._dt 
+                          * (brine_total_energy_flow 
+                          + q_brine_wall
+                          + q_rad) 
+                          + e_vapor_brine)
+        _eqn += 1
+
+        residuals[_eqn] = self._m_brine - self._m_brine_m1 + mass_change_vapor
         
+        if _eqn + 1 != self._NUM_EQN:
+            raise ValueError("The number of residuals calculated is not equal"
+                             +" to the number of equations/variables! This is"
+                             +" a developer bug!")
 
-            
-
-        
-        breakpoint()
-
-        
-        cfluid = self._model.fluids['cavern']
-        
-        ### ----- MASS OF BRINE   ---- ###
-        residuals[self._number_fluids + 3] = self._m_brine - self._m_brine_m1 + mass_change_vapor
-        
-
-
-# EVERYTHING BELOW HERE IS JUNK FROM THE OLD CODE ERASE IT WHEN RESIDUALS IS WORKING!
-
-        
-        self.initialize()
-        inp = self.inputs
-
-        # mass balance 
-        residuals[0] = 0
-
-        self._mass_rate(0)
-        self.total_mass_rate[0] = self._total_mass_rate(0)
-
-        # Run actual integration by updating values by numerical integration/time stepping
-        # Mass of fluid is calculated from previous time step mass and mass flow rate
-        for i in range(1, len(self.time_array)):
-
-            # if i == 100:
-            #     breakpoint()
-            #     from matplotlib import pyplot as plt
-            #     plt.plot(self.time_array[:i],self.T_cavern[:i])
-            #     plt.show()
-
-            # must sum mass rate
-            total_mass_rate = self._total_mass_rate(i)
-            self.total_mass_rate[i] = total_mass_rate
-
-            # filling is positive total mass rate, discharge is negative
-            # the perspective is from the cavern.
-            self.mass_fluid[i] = (
-                self.mass_fluid[i - 1] + total_mass_rate * self.tstep
-            )
-
-            self.rho[i] = self.mass_fluid[i] / self.vol
-
-            hi = self._calc_h_in(i)
-            self.h_inside[i] = hi
-
-            # same as above
-            self.Q_inner[i] = (
-                self.surf_area_inner
-                * hi
-                * (self.T_cavern_wall[i - 1] - self.T_cavern[i - 1])
-            )
-
-            # Axisymmetric, time-transient heat transfer
-            # the Q_inner is negative when leaving the gas into
-            # the salt but positive coming into the salt (thus)
-            # the negative sign
-            Tgvec = self.axsym.step(self.tstep,-self.Q_inner[i])
-
-            self.T_cavern_wall[i] = Tgvec[0]
-
-            # Run the explicit models of pipe losses for each well.
-            for wname, well in self.wells.items():
-                if not well.input["ideal_pipes"]:
-                    well.step(i,self.P_cavern[i-1],self,wname)
-
-
-            #NMOL = self.mass_fluid[i - 1] / self.MW
-            #NMOL_ADD = (self.mass_fluid[i] - self.mass_fluid[i - 1]) / self.MW
-            # New
-            U_start = self.U_mass[i - 1] * self.mass_fluid[i - 1]
-
-            # Finding the inlet/outlet enthalpy rate for the energy balance
-            # HERE IS WHERE I STOPPED, YOU NEED TO WRITE A FUNCTION OVER
-            # WELLS and PIPES that finds the average h_in
-
-            h_in = self._enthalpy_rate(i)
-
-            if i > 1:
-                P1 = self.P_cavern[i - 2]
-            else:
-                P1 = self.P_cavern[i - 1]
-
-            U_end = (
-                U_start
-                + self.tstep * total_mass_rate * h_in
-                + self.tstep * self.Q_inner[i]
-            )
-            self.U_mass[i] = U_end / self.mass_fluid[i]
-
-            P1, T1, self.U_res[i] = self.UDproblem(U_end/ self.mass_fluid[i],self.rho[i],self.P_cavern[i-1],self.T_cavern[i-1])
-
-
-            self.P_cavern[i] = P1
-            self.T_cavern[i] = T1
-            self.fluid.update(CP.PT_INPUTS, self.P_cavern[i],  self.T_cavern[i])
-
-
-            # Updating H,S,U states
-            self.H_mass[i] = self.fluid.hmass()
-            self.S_mass[i] = self.fluid.smass()
-            self.U_mass[i] = self.fluid.umass()
-
-            cpcv = self.fluid.cp0molar() / (self.fluid.cp0molar() - Constants.Rg['value'])
-
-            for wname,well in inp["wells"].items():
-                self._mass_rate(i)
-
-            # dlvilla diagnostics to determine if the model
-            if self.include_fault_analytics:
-                self._model_fault_analytics(i)
-
-
-
-
-        self.isrun = True
+        return residuals
         
         
-        breakpoint()
-
 
     def get_x(self):
         return np.array([[self._t_cavern] +
@@ -610,6 +568,21 @@ class SaltCavern(AbstractComponent, HydDown):
                          [self._t_brine] +
                          [self._t_brine_wall] +
                          list(self._m_cavern)])
+    
+    def shift_solution(self):
+        self._t_cavern_m1 = self._t_cavern
+        self._t_brine_m1 = self._t_brine
+        self._m_cavern_m1 = self._m_cavern
+        self._m_brine_m1 = self._m_brine
+        # shift the composition of the gas fluid
+        # calculate 
+        total_mass = self._m_cavern.sum()
+        self._fluid_m1.set_mass_fraction(self._m_cavern/total_mass)
+        rho_cavern = total_mass / self._vol_cavern
+        self._fluid_m1.update(CP.DmassT_INPUTS,rho_cavern, self._t_cavern)
+        self._p_cavern_m1 = self._fluid.p()
+        self._water_m1.update(CP.PT_INPUTS,self._brine_average_pressure(),self._t_brine)
+        
 
 
     def load_var_values_from_x(self,xg):
@@ -631,9 +604,11 @@ class SaltCavern(AbstractComponent, HydDown):
         # see model._build_ghes for the variable structure of each 
         # axisymmetric ground heat exchanger.
         self._q_axisym = []
+        self._t_axisym = []
         for cname, comp in self._next_components.items():
             if isinstance(comp, ImplicitEulerAxisymmetricRadialHeatTransfer):
-                self._q_axisym.append(xg[comp.global_indices[0]])
+                self._q_axisym.append(xg[comp.global_indices[0]]) # first place is the wall fliux
+                self._t_axisym.append(xg[comp.global_indices[1]]) # second place is the first temperature
             else:
                 raise NotImplementedError("Only Axisymmetric heat transfer "
                                           +"can be a next component for salt"
@@ -682,11 +657,21 @@ class SaltCavern(AbstractComponent, HydDown):
             prandtl = cp * visc / cond
             beta = cfluid.isobaric_expansion_coefficient()
             nu = visc / cfluid.rhomass()
-            grashoff = const['g']['value'] * beta * abs(self._t_cavern_wall - self._t_cavern) * length ** 3 / nu ** 2
+            grashoff = const.g['value'] * beta * abs(self._t_cavern_wall - self._t_cavern) * length ** 3 / nu ** 2
             rayleigh = prandtl * grashoff
             nusselt = natural_convection_nu(rayleigh, prandtl)
             ht_coef = nusselt * cond / length
         else:
             ht_coef = self._ht_coef
         return ht_coef
+    
+    def _brine_cavern_ht_coef(self, radius, cfluid):
+        # TODO - put actual values!!
+        return 5.0
+    
+    def _radiation_vf(self, cavern_diameter, cavern_height):
+        _r = cavern_diameter / 2.0
+        _rho = (np.sqrt(4.0 * _r**2 + 1) - 1)/_r
+        return _rho / (2.0 * _r)
+
 

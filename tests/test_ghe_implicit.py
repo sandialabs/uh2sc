@@ -37,6 +37,7 @@ class TestGHE(unittest.TestCase):
 
                 # SETUP YOUR METHOD OF SOLUTION
         t_end = 2592000
+        t_step_pde = 600
         t_step = 600  # a daily time step is fine
         implicit_mult = 144  # maximal time step that only had a slight error
         # a 1 day time step is ok for the implicit solver. ( in comparison to
@@ -96,7 +97,7 @@ class TestGHE(unittest.TestCase):
                                                     r1=r_cavern,
                                                     r2=dist_next_cavern/2.0,
                                                     num_elem=number_pde_elem+1,
-                                                    t_step=t_step)
+                                                    t_step=t_step_pde)
 
         r_step = (dist_next_cavern/2 - r_cavern)/(number_pde_elem+1)
         linear_grid = np.arange(r_cavern,dist_next_cavern/2,r_step)
@@ -118,8 +119,15 @@ class TestGHE(unittest.TestCase):
         if len(linear_grid) > len(crow):
             linear_grid = linear_grid[:len(crow)-len(linear_grid)]
 
-        plt.plot(model.components["ghe_test"].grid,row[1:-1],linear_grid,crow)
-        plt.legend(["mine","pde"])
+        fig, ax = plt.subplots(1,1)
+        ax.plot(model.components["ghe_test"].grid,row[1:-1],linear_grid,crow)
+        ax.legend(["uh2sc","symbolic pde solver"])
+        ax.set_xlabel("Radial distance (m)")
+        ax.set_ylabel("Temperature (K)")
+        ax.set_title("Ground heat exchanger verification")
+        plt.xlim(10,14)
+        ax.grid('on')
+        
 
 
         self.assertFalse(max_error[time] > 2.1) # Kelvin

@@ -44,3 +44,7 @@ class Constants:
     pa_2_psi = {'value': 0.000145038,
                 'unit': "Pa/psi"}
     
+    stefan_boltzman = {'value':5.67e-8,
+                       'units': ("Watts per meter squared per Kelvin to the "
+                       +"fourth (W/m2/K4)")}
+    

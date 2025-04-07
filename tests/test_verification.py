@@ -372,6 +372,7 @@ class TestSaltCavernVerification(unittest.TestCase):
                         ax.legend(["Gas","Wall","Gas Nielson"])
                         ax.grid("on")
 
+
                         fig.savefig('comparison'+ filename[:-3]+'png',dpi=300)
 
                     time_s_nielson = verify_obj['day of year'].values * con.second_in_day
