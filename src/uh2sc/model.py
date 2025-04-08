@@ -109,7 +109,7 @@ class Model(AbstractComponent):
 
     def run(self):
         for time in self.times:
-            
+            self.time = time
             # solve the current time step
             tup = self.solver.solve(self)
             
@@ -161,10 +161,9 @@ class Model(AbstractComponent):
         xg = self.xg
         for cname, component in self.components.items():
             bind, eind = component.global_indices
-            try:
-                xg[bind:eind+1] = component.get_x()
-            except:
-                breakpoint()
+
+            xg[bind:eind+1] = component.get_x()
+
         return xg
 
     def evaluate_residuals(self,x=None):
@@ -174,11 +173,9 @@ class Model(AbstractComponent):
 
                 # this is the single x behavior used by
                 # local evaluations of residuals
-                try:
-                    residuals += list(component.evaluate_residuals())
-                except:
-                    breakpoint()
-                    pass
+
+                residuals += list(component.evaluate_residuals())
+
                 
             return np.array(residuals)
         else:
@@ -209,6 +206,12 @@ class Model(AbstractComponent):
     def shift_solution(self):
         for cname, component in self.components.items():
             component.shift_solution()
+            
+    def equations_list(self):
+        e_list = []
+        for cname, component in self.components.items():
+            e_list += component.equations_list()
+        return e_list
 
 
 
@@ -391,7 +394,8 @@ class Model(AbstractComponent):
                   bc=ghe["initial_conditions"],
                   dt0=t_step,
                   adj_comps=adjacent_comps,
-                  global_indices=(beg_idx,end_idx))
+                  global_indices=(beg_idx,end_idx),
+                  model=self)
 
     
 

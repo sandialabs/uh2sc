@@ -3,22 +3,16 @@
 # Published under an MIT license
 
 
-import math
-import numpy as np
-from scipy.optimize import minimize
-from CoolProp.CoolProp import PropsSI
-import CoolProp.CoolProp as CP
-from uh2sc import transport as tp
 
-from uh2sc.errors import NumericAnomaly,MassTooLow,InputFileError
-from uh2sc.constants import Constants
-from uh2sc.utilities import filter_cpu_count, process_CP_gas_string
+import numpy as np
+
 from uh2sc.abstract import AbstractComponent, ComponentTypes
+
 
 class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
 
     def __init__(self,r_inner,kg,rhog,cpg,length_component,number_elements,dist_next_cavern_wall,Tg,
-                 dist_to_Tg_reservoir,dt0,bc,adj_comps,global_indices,Tgvec0=None):
+                 dist_to_Tg_reservoir,dt0,bc,adj_comps,global_indices,Tgvec0=None,model=None):
         """
         Inputs: (all are float or int)
         -------
@@ -51,6 +45,7 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
 
 
         """
+        self._model = model
         self.dt = dt0
         self.number_elements = number_elements
 
@@ -209,8 +204,18 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
         if len(prev_comp) == 0:
             residuals[0] = Q[0] - self.bc["Q0"]
         else:
-            raise NotImplementedError("I'm still working on the case "
-            +"where this is connected to something!!!")
+            Q_in = 0.0
+            for tup in self.previous_adjacent_components:
+                component_name = tup[0]
+                component = self._model.components[component_name]
+                if hasattr(component,"q_brine_wall") and hasattr(component,"q_cavern_wall"):
+                    Q_in += component.q_brine_wall + component.q_cavern_wall
+                else:
+                    raise NotImplementedError("Only caverns can be connected"
+                                              +" to axisymmetric heat transfer "
+                                              +"in the current version!")
+            residuals[0] = Q[0] - Q_in
+            
         next_comp = self.next_adjacent_components
         if len(next_comp) == 0:
             # flux condition on end
@@ -237,6 +242,17 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
         self.Qg = Qg
 
         return residuals
+    
+    def equations_list(self):
+        e_list = []
+        e_list += ["Axisymmetric heat transfer flux continuity with cavern"]
+        for idx in range(0,self.number_elements):
+            e_list += [f"Axisymmetric heat transfer energy balance in control volume {idx}"]
+        e_list += ["Axisymmetric heat transfer constant flux condition extending into last control volume"]
+        e_list += ["Axisymmetric heat transfer constant flux exiting the ground heat exchanger"]
+        return e_list
+        
+        
 
     def get_x(self):
         return np.array([self.Q[0]] + list(self.Tgvec) + [self.Q[-1]])

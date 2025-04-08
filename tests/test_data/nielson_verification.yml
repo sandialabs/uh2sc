@@ -46,7 +46,7 @@ initial:  #
   liquid_height: 1.0 # in meters
   liquid_temperature: 322.5 # ussually 2-4 C cooler than the gas
 calculation:
-  time_step: 300.0 # seconds
+  time_step: 3.0 # seconds
   end_time: 2628000.0 # This will change by code input!
   run_parallel: false
 heat_transfer:

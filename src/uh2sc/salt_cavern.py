@@ -201,8 +201,9 @@ class SaltCavern(AbstractComponent):
         self._ht_coef = input_dict['heat_transfer']['h_inner']
         
         
-        self._q_cavern_wall = 0.0 #starting with t_cavern_wall = t_liquid_wall
-        self._q_brine_wall = 0.0
+        # needed by 
+        self.q_cavern_wall = 0.0 #starting with t_cavern_wall = t_liquid_wall
+        self.q_brine_wall = 0.0
         
         # solution
         self._NUM_EQN = self._number_fluids + 5 # see get_x for the 5 first variables.
@@ -300,6 +301,31 @@ class SaltCavern(AbstractComponent):
         this is so that specific properties and methods can be invoked
 
         """
+        return "cavern"
+    
+    def equations_list(self):
+        # THIS MUST BE UPDATED WHENEVER THE RESIDUALS EQUATION ORDER
+        # IS CHANGED!
+        e_list = []
+        for fluid_name in self._fluid.fluid_names():
+            e_list += [f"Cavern conservation of mass for {fluid_name}"]
+            
+        e_list += ["Heat flux continuity between cavern and axisymmetric heat transfer"]
+        
+        for idx, t_axisym in enumerate(self._t_axisym):
+            e_list += [f"Temperature continuity between cavern and axisymmetric heat transfer {idx}"]
+            
+        e_list += ["Cavern energy balance"]
+        e_list += ["Brine energy balance"]
+        e_list += ["Brine mass balance"]
+        
+        return e_list
+            
+        
+        
+        
+        
+        
 
 
     def evaluate_residuals(self,x=None):
@@ -472,7 +498,8 @@ class SaltCavern(AbstractComponent):
                                height_brine / height_total)
                                * ht_coef_brine_wall
                                * (self._t_brine_wall - self._t_brine))
-        
+        self.q_cavern_wall = q_cavern_wall
+        self.q_brine_wall = q_brine_wall
         # ----  HEAT TO GHE ---- #
         # heat flux balance between axisymmetric heat transfer (perhpas more than one
         # along the cavern)

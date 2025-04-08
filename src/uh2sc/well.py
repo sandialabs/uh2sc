@@ -41,9 +41,11 @@ class Well(AbstractComponent):
         """
         CP - cool props object
         """
+        self._NUM_EQN = 5
         self._gindices = global_indices
         self.input = well_dict
         self._model = model
+        self._name = well_name
         
         self._number_fluids = len(model.fluids['cavern'].fluid_names())
         
@@ -200,12 +202,60 @@ class Well(AbstractComponent):
                         np.array of length number_elements + 1
                 
         """
-        return np.array([])
+        if x is None:
+            self.load_var_values_from_x(self._model.xg)
+        else:
+            self.load_var_values_from_x(x)
+        
+        residuals = np.zeros(self._NUM_EQN)
+        _eqn = 0
+        # mass flow continuity
+        for comp_name, comp in self.next_adjacent_components.items():
+            for pname, pipe in self.pipes.items():
+                
+                mdot = np.interp(self._model.time,pipe.valve['time'],pipe.valve['mdot'])
+                total_flow = pipe.mass_rates[0,:].sum()
+                t_exit, p_exit = pipe.initial_adiabatic_static_column(
+                    comp._t_cavern, comp._p_cavern, total_flow)
+                
+
+                gmdots = calculate_component_masses(comp._fluid, 
+                        self._model.molar_masses, gas_mass=mdot)['gas']
+                # mass balance of each gas component
+                residuals[0:self._number_fluids] = pipe.mass_rates[0,:] - gmdots
+                _eqn += self._number_fluids
+                residuals[_eqn] = pipe.temp_fluid[-1] - t_exit[-1]
+                _eqn += 1
+                residuals[_eqn] = pipe.pres_fluid[-1] - p_exit[-1]
+                _eqn += 1
+                residuals[_eqn] = pipe.temp_fluid[0] - t_exit[0]
+                _eqn += 1
+                residuals[_eqn] = pipe.pres_fluid[0] - p_exit[0]
+        
+        return residuals
+
+    def equations_list(self):
+        e_list = []
+        for pname, pipe in self.pipes.items():
+            for fluid_name in pipe.fluid.fluid_names():
+                e_list += [f"Well {self._name}, Pipe {pname}, {fluid_name} mass balance"]
+            
+            e_list += [f"Well {self._name}, Pipe {pname}, exit temperature adiabatic continuity"]
+            e_list += [f"Well {self._name}, Pipe {pname}, exit pressure adiabatic continuity"]
+            e_list += [f"Well {self._name}, Pipe {pname}, entrance temperature adiabatic continuity"]
+            e_list += [f"Well {self._name}, Pipe {pname}, entrance pressure adiabatic continuity"]
+            
+        return e_list
+            
+         
+
     
     def get_x(self):
+        # THIS HAS TO BE UPDATED IF YOU IMPLEMENT CONTROL VOLUMES!!!
         x = []
         for pname, pipe in self.pipes.items():
-            x += list(pipe.mass_rates[-1])
+            for idx in range(self._number_fluids):
+                x += [pipe.mass_rates[0,idx]]
             x += [pipe.temp_fluid[0]]
             x += [pipe.pres_fluid[0]]
             x += [pipe.temp_fluid[1]]
@@ -214,10 +264,16 @@ class Well(AbstractComponent):
 
 
     def load_var_values_from_x(self,xg):
-        breakpoint()
-        xloc = xg[self.global_indices]
+        # THIS HAS TO BE UPDATED IF YOU IMPLEMENT CONTROL VOLUMES!!!
+        xloc = xg[self.global_indices[0]:self.global_indices[1]+1]
         for name, pipe in self.pipes.items():
-            pipe.mass_rates = np.array([xloc[0:self._number_fluids]])
+            pipe.mass_rates = np.zeros((2,self._number_fluids))
+            pipe.mass_rates[0,:] = xloc[0:self._number_fluids]
+            pipe.mass_rates[1,:] = xloc[0:self._number_fluids]
+            pipe.mass_rates = np.array([[xloc[0]],[xloc[0]]])
+            pipe.temp_fluid = np.array([xloc[1],xloc[3]])
+            pipe.pres_fluid = np.array([xloc[2],xloc[4]])
+            
             
     def shift_solution(self):
         pass
@@ -435,15 +491,16 @@ class VerticalPipe(object):
                                                        gas_mass=mass_rate0,
                                                        liquid_mass=0.0)['gas']
             else:
-                mass_rates = np.zeros((num_cv_p_1))
+                mass_rates = np.zeros((num_cv_p_1,self._number_fluids))
                 
         # state variables
 
         self.temp_fluid, self.pres_fluid = self.initial_adiabatic_static_column(initial_temperature,
                                                             initial_pressure,
                                                             mass_rate0)
+        
 
-        self.mass_rates = mass_rate0 * np.ones([num_cv_p_1,self._number_fluids])
+        self.mass_rates = mass_rates * np.ones([num_cv_p_1,self._number_fluids])
 
         # TODO, mass_loss is a place holder. it is not developed.
         self.mass_loss = np.zeros(int(number_control_volumes))
@@ -525,7 +582,7 @@ class VerticalPipe(object):
 
 
 
-
+    # NOT USED
     def _hydraulic_diameter(self):
 
         if self.diameters[0] == 0.0 and self.diameters[1] == 0.0:
@@ -537,105 +594,6 @@ class VerticalPipe(object):
 
         return area_times_4 / perimeter, area_times_4/4.0
 
-    def step(self,cavern,wname,i):
-        """
-        The pipe equations can be solved by successive substition since it is a 1-D system
-        with a known temperature and pressure on one side. if "flow_from_surface_to_cavern"
-        is true, then the first temperature and pressure are the reservoir temperature
-        and pressure
-        """
-        if self.valve['type'] != "mdot":
-            raise NotImplementedError("Only mdot valves have been implemented in this version")
-
-        # boundary condition for mass flow rate through valve.
-        time = cavern.tstep * i
-
-        mass_rate0 = np.interp(time,self.valve['time'],self.valve['mdot'])
-
-
-        if mass_rate0 > 0:  # inflow into the cavern for this pipe
-            flow_from_surface_to_cavern = True
-        else:
-            flow_from_surface_to_cavern = False
-
-        # defines self.mass_rate based on the current defined rate of mass flow
-        self._mass_balance(mass_rate0)
-
-        # calculate all of the mass rates TODO - this assumes that the pipe
-        # has an mdot valve (i.e. mass_rate directly defined, in the future,
-        # this will not necessarily be the case, each valve type will produce
-        # a mass rate based on the P1,T1)
-        if flow_from_surface_to_cavern:
-            self.pres_fluid[0] = self.valve['reservoir']['pressure']
-            self.temp_fluid[0] = self.valve['reservoir']['temperature']
-            # these factors (fac0, fac1) enable the code to either start from
-            # the surface and work down (injection) or start from the cavern
-            # and work up (production)
-            fac0 = 0
-            fac1 = 1
-        else:
-            self.pres_fluid[-1] = cavern.P_cavern[i]
-            self.temp_fluid[-1] = cavern.T_cavern[i]
-            fac0 = 1
-            fac1 = -1
-
-        for cvn in range(self.num_cv):
-            # either count up or count down depending on mass flow direction
-            adj_cvn = int(fac0 * self.num_cv + fac1 * cvn)
-            adj_cvn_pm1 = int(adj_cvn+fac1)
-
-            # pressure loss and adiabatic expansion or contraction
-            state1 = (self.pres_fluid[adj_cvn],self.temp_fluid[adj_cvn],self.mass_rate[adj_cvn],self.depths[adj_cvn])
-            state2 = (self.pres_fluid[adj_cvn_pm1],self.temp_fluid[adj_cvn_pm1],self.mass_rate[adj_cvn_pm1],self.depths[adj_cvn_pm1])
-            delP, delT_pres = self._pressure_loss_and_adiabatic_expcomp(state1,state2,self.mass_loss[adj_cvn_pm1])
-
-            delT_heat = self._heat_loss()
-
-            self.pres_fluid[adj_cvn_pm1] = self.pres_fluid[adj_cvn] + delP
-            self.temp_fluid[adj_cvn_pm1] = self.temp_fluid[adj_cvn] + delTPres
-
-
-
-
-            # this is where we have left off.
-            #next heat gains/losses to the surroundings.
-
-            #delT2 = self._heat_loss()
-
-
-            # now that pressures are updated, solve the energy balance so that
-
-
-
-    def _mass_balance(self,mass_rate0):
-
-        if self.valve['type'] != 'mdot':
-            raise NotImplementedError("The current code only handles 'mdot' valves")
-        else:
-            self.mass_rate[0] = mass_rate0
-
-            for cvn in range(1,self.num_cv+1):
-                self.mass_rate[cvn] = self.mass_rate[cvn-1] - self.mass_loss[cvn-1]
-
-    def _heat_loss(self,):
-        pass
-
-
-        #Tbar_next_pipe_inner = self.
-
-
-    def _energy_balance(self,state1,state2,mdot_loss):
-        """
-        bar indicates the average value
-
-        """
-        pres1, temp1, mdot1, height1 = state1
-        pres2, temp2, mdot2, height2 = state2
-
-        _, rho1, h1, v1, mu1, re1, cp1 = self._get_variables(pres_bar, temp_bar, mdot_bar)
-
-        (friction_factor, density, enthalpy, velocity, viscosity,
-                reynolds_number, specific_heat)
 
     def initial_adiabatic_static_column(self,initial_temperature,initial_pressure,mass_rate0,return_rho=False):
         """
@@ -716,14 +674,15 @@ class VerticalPipe(object):
 
 
 
-
+    # NOT USED
     def _average_velocity(self,mdot,density):
         return mdot / density / self.area
-
+    
+    # NOT USED
     def _viscous_pressue_loss(self,friction_factor,length,velocity, min_loss):
         return ((friction_factor * length / self.D_h + min_loss) * velocity ** 2
                 / (2 * const.g["value"]))
-
+    # NOT USED
     def _pressure_loss_and_adiabatic_expcomp(self,state1,state2,mdot_loss):
         """
         Each control volume evaluates at two points in anticipation of
@@ -805,6 +764,7 @@ class VerticalPipe(object):
 
         return delP, delT
 
+    # NOT USED - DEVELOPMENT STOPPED
     def _heat_loss(self,state1,state2,):
 
 
@@ -838,14 +798,7 @@ class VerticalPipe(object):
         #                              specific_heat,
         #                              thermal_conductivity)
 
-
-
-
-
-
-
-
-
+    # NOT USED
     def _get_variables(self,pressure,temperature,mdot):
 
         self.fluid.update(CP.PT_INPUTS,pressure,temperature)
@@ -866,7 +819,7 @@ class VerticalPipe(object):
 
 
 
-
+    # NOT USED
     def _darcy_weisback_friction_factor(self,Re):
         """
         Per equations 30-32 of ASHRAE fundamentals 2021 for Chapter 3 Fluid flow

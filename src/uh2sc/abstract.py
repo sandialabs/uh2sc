@@ -78,6 +78,16 @@ class AbstractComponent(ABC):
     @abstractmethod
     def shift_solution(self):
         pass
+    
+    @abstractmethod
+    def equations_list(self):
+        """
+        The user MUST put in the correct number of equation
+        descriptions so that the system's meaning and order
+        is well described same as the model's variables are
+        in model.x_descriptions
+        """
+        pass
 
     def evaluate_jacobian(self,x=None):
         # must do this numerically and we follow the same routine
@@ -93,7 +103,6 @@ class AbstractComponent(ABC):
             
             
             J = compute_jacobian(self.evaluate_residuals,x)
-            breakpoint()
             return csr_matrix(J)
         else:
             if x is None:
