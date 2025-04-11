@@ -1,8 +1,9 @@
 
 
-
+from copy import deepcopy
 from warnings import warn
 import numpy as np
+from matplotlib import pyplot as plt
 
 import CoolProp.CoolProp as CP
 
@@ -25,6 +26,7 @@ from uh2sc.thermodynamics import (density_of_brine_water,
 
 
 
+
 ADJ_COMP_TESTING_NAME = "testing"
 
 class Model(AbstractComponent):
@@ -42,7 +44,7 @@ class Model(AbstractComponent):
      surface pipes and may include pumps/compressors.
     """
 
-    def __init__(self,inp,single_component_test=False,**kwargs):
+    def __init__(self,inp,single_component_test=False,solver_options={},**kwargs):
 
         """
         Construct a combined model of 1) a salt cavern, 2) an arbitrary number
@@ -60,7 +62,12 @@ class Model(AbstractComponent):
         """
 
         self.inputs = self._read_input(inp)
+        
         self.test_inputs = kwargs
+        if len(kwargs) != 0:
+            self.is_test_mode = True
+        else:
+            self.is_test_mode = False
 
         if not single_component_test:
             if len(kwargs) != 0:
@@ -89,7 +96,7 @@ class Model(AbstractComponent):
 
         self._build(num_caverns,num_wells,num_ghes)
 
-        self.solver = NewtonSolver()
+        self.solver = NewtonSolver(solver_options)
 
         time_step = self.inputs["calculation"]["time_step"]
         nstep = int(self.inputs["calculation"]["end_time"]
@@ -110,6 +117,7 @@ class Model(AbstractComponent):
     def run(self):
         for time in self.times:
             self.time = time
+            print(time)
             # solve the current time step
             tup = self.solver.solve(self)
             
@@ -118,11 +126,9 @@ class Model(AbstractComponent):
                 # update the state of the model
                 self.shift_solution()
 
-                
+
                 # gather the results
-                self._solutions[time] = {}
-                for cname, component in self.components.items():
-                    self._solutions[time][cname] = component.get_x()
+                self._solutions[time] = deepcopy(self.get_x())
             
             else:
                 msg = tup[1]
@@ -213,7 +219,54 @@ class Model(AbstractComponent):
             e_list += component.equations_list()
         return e_list
 
-
+    def plot_solution(self,variables):
+        """
+        Inputs:
+            variables: list: of either integers or strings, strings must
+                 be in self.xg_descriptions
+        
+        
+        """
+        xgd = self.xg_descriptions
+        num_var = len(xgd)
+        
+        axd = {}
+        figd = {}
+        for variable in variables:
+            if isinstance(variable, int):
+                if variable < len(xgd) and variable > -1:
+                    variable_str = self.xg_descriptions[variable]
+                else:
+                    raise ValueError(f"Only integers less than the number "
+                                     +f"of variables {num_var} are allowed,"
+                                     +f" you entered {variable}!")
+            else:
+                if variable in self.xg_descriptions:
+                    variable_str = variable
+                else:
+                    raise ValueError("You must enter a valid variable name"
+                                     +f" string, you entered {variable} which"
+                                     +" is not in the variable list "
+                                     +"model.xg_descriptions")
+            fig,ax = plt.subplots(1,1,figsize=(5,5))
+            
+            idx = self.xg_descriptions.index(variable_str)
+            
+            values = np.array([[time,solution[idx]] for time,solution 
+                               in self._solutions.items()])
+            
+            ax.plot(values[:,0],values[:,1],label=variable_str)
+            ax.grid("on")
+            ax.set_xlabel = "time (s)"
+            ax.set_ylabel = variable_str
+            plt.show()
+            
+            axd[variable_str] = ax
+            figd[variable_str] = fig
+        
+        return figd, axd
+        
+        pass    
 
     def _build(self,num_caverns,num_wells,num_ghes):
         """
@@ -272,7 +325,7 @@ class Model(AbstractComponent):
         # also assigns self.fluid_components which is the list of all pure fluids
         # that exist in the model and is used to define equations
         # sets self.molar_masses and others!
-        if "wells" in self.inputs:
+        if not self.is_test_mode:
             # if not, then we are in a test mode.
             find_all_fluids(self)
             self.num_material = len(self.molar_masses)
@@ -301,7 +354,7 @@ class Model(AbstractComponent):
         self.xg = np.array(xg)
         self.components = components
         
-        if 'cavern' in self.inputs:
+        if not self.is_test_mode:
             self._connect_components()
 
 
@@ -319,7 +372,7 @@ class Model(AbstractComponent):
         ghes = self.inputs["ghes"]
 
         for name,ghe in ghes.items():
-            if len(self.test_inputs) != 0:
+            if self.is_test_mode:
                 # This is testing mode and you have to add stuff that
                 # would normally come from the main ("schema_general.yml") schema.
                 t_step = self.test_inputs["dt"]
@@ -404,9 +457,20 @@ class Model(AbstractComponent):
         Build the cavern (no multi-cavern capability yet!)
         
         """
-        if len(self.test_inputs) != 0:
-            
-            pass
+        if self.is_test_mode:
+            fluid_name = self.inputs["initial"]["fluid"]
+            self.fluids = {}
+            self.fluids["cavern"] = CP.AbstractState("HEOS",fluid_name)
+            self.fluids["cavern"].set_mass_fractions([1.0])
+            self.fluids["cavern"].update(CP.PT_INPUTS,
+                                         self.inputs["initial"]["pressure"],
+                                         self.inputs["initial"]["temperature"])
+            self.molar_masses = {}
+            self.molar_masses[fluid_name] = self.fluids["cavern"].molar_mass()
+            self.test_inputs["r_radial"] = (np.log(self.test_inputs['r_out']
+                                                   /(self.inputs['cavern']['diameter']/2.0))
+                                            / (2 * np.pi * self.inputs["cavern"]["height"] 
+                                               * self.test_inputs['salt_therm_cond']))
         else:
             pass
             prev_components = self.inputs['wells']

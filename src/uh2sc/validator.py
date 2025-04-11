@@ -302,7 +302,7 @@ def validation(inp):
 
     # Now check that GHE names connecting to the wells and caverns
     # are actual names.
-    if inp["cavern"]["ghe_name"] not in gnames:
+    if (inp["cavern"]["ghe_name"] not in gnames) and (inp["cavern"]["ghe_name"] != "test_mode"):
         cavern_ghe_name = "cavern_ghe_name"
         validate_dict[cavern_ghe_name] = _LocalErrorObj()
         retval[cavern_ghe_name] = validate_dict[cavern_ghe_name].validate(

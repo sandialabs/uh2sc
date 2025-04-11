@@ -64,7 +64,7 @@ def Pr(T, P, species):
     return Pr
 
 
-def natural_convection_nu(rayleigh_number, prandtl_number):
+def natural_convection_nu_vertical(rayleigh_number, prandtl_number):
     """
     Calculation of Nusselt number for natural convection. See eq. 4.7-4  and Table 4.7-1 in
     C. J. Geankoplis Transport Processes and Unit Operations, International Edition,
@@ -81,7 +81,14 @@ def natural_convection_nu(rayleigh_number, prandtl_number):
         nusselt_number = 1.36 * rayleigh_number ** 0.20
     return nusselt_number
 
-
+def natural_convection_nu_horizontal(rayleigh_number, prandtl_number):
+    
+    if rayleigh_number > 1e5 and rayleigh_number < 1e11:
+        nusselt_number = 0.27 * (rayleigh_number * prandtl_number) ** 0.25
+    else:
+        raise ValueError("horizontal relationship bounds outside valid bounds!")
+                         
+    return nusselt_number
 
 
 def Pr_fluid(fluid):

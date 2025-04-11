@@ -265,6 +265,7 @@ class NewtonSolver(object):
         for outer_iter in range(self.maxiter):
             if time.time() - t0 >= self.time_limit:
                 return (
+                    
                     SolverStatus.error,
                     "Time limit exceeded",
                     outer_iter,
@@ -286,6 +287,9 @@ class NewtonSolver(object):
                         ostream.write(msg + "\n")
 
             if r_norm < self.tol:
+                model.converged_solution_point = True
+                model.evaluate_residuals()
+                model.converged_solution_point = False
                 return (
                     SolverStatus.converged,
                     "Solved Successfully",
@@ -296,6 +300,7 @@ class NewtonSolver(object):
 
             # Call Linear solver
             try:
+                
                 d = -sp.linalg.spsolve(J, r, permc_spec="COLAMD", use_umfpack=False)
             except sp.linalg.MatrixRankWarning:
                 return (
@@ -311,7 +316,12 @@ class NewtonSolver(object):
                 for iter_bt in range(self.bt_maxiter):
                     x_ = x + alpha * d
                     model.load_var_values_from_x(x_)
-                    r_ = model.evaluate_residuals()
+                    try:
+                        r_ = model.evaluate_residuals()
+                    except:
+                        alpha = alpha * self.rho
+                        continue
+                    
                     new_norm = np.max(abs(r_))
                     if new_norm < (1.0 - 0.0001 * alpha) * r_norm:
                         x = x_
@@ -320,6 +330,7 @@ class NewtonSolver(object):
                         alpha = alpha * self.rho
 
                 if iter_bt + 1 >= self.bt_maxiter:
+
                     return (
                         SolverStatus.error,
                         "Line search failed at iteration " + str(outer_iter),
@@ -334,7 +345,6 @@ class NewtonSolver(object):
             else:
                 x += d
                 model.load_var_values_from_x(x)
-
         return (
             SolverStatus.error,
             "Reached maximum number of iterations: " + str(outer_iter),
