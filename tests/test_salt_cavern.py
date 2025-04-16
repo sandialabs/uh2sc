@@ -13,7 +13,18 @@ from uh2sc.model import Model, ADJ_COMP_TESTING_NAME
 from CoolProp import CoolProp as CP
 
 
-def initialize_model():
+def initialize_model(mixture=False):
+    
+    if mixture:
+        fluid_str = "H2[0.0]&Methane[1.0]"
+        end_time = 10000
+        mdot=[1,1]
+    else:
+        fluid_str = "H2"
+        end_time = 1e6
+        mdot=[-1,-1]
+        
+    
     inp = {"cavern":{"depth":1000.0,
                      "overburden_pressure":19829198.656747766,
                      "height":304.8,
@@ -22,12 +33,12 @@ def initialize_model():
                      "ghe_name":ADJ_COMP_TESTING_NAME},
            "initial":{"temperature":326.5,
                       "pressure":9000000.0,
-                      "fluid":"H2",
+                      "fluid":fluid_str,
                       "start_date":"2023-01-01",
                       "liquid_height":1.0,
                       "liquid_temperature": 326.5},
            "calculation":{"time_step": 3000.0,
-                          "end_time":1e6, #2.592e6,
+                          "end_time":end_time, #2.592e6,
                           "run_parallel":False},
            "heat_transfer":{"h_inner":"calc"},
            "wells":{},
@@ -35,7 +46,7 @@ def initialize_model():
     
     model = Model(inp,
                   single_component_test=True,
-                  mdot=[-1,-1],
+                  mdot=mdot,
                   time=[0,inp["calculation"]["end_time"]],
                   type="CAVERN",
                   r_out=inp['cavern']['diameter'],
@@ -48,6 +59,7 @@ class TestSaltCavern(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.plot_results = False
+        cls.run_all = True
 
         
 
@@ -65,47 +77,49 @@ class TestSaltCavern(unittest.TestCase):
         
         
         """
-        model = initialize_model()
-        cavern = model.components['cavern']
-        
-        air = CP.AbstractState("HEOS","Air")
-        air.update(CP.PT_INPUTS,101325,35+273.15 )
-        cavern._p_cavern = 101325
-        
-        cavern._t_cavern = 60+273.15
-        cavern._t_cavern_wall = 10 +273.15
-        ht = cavern._wall_ht_coef(4.0,air)
-        
-        self.assertTrue(ht < 6.0 and ht > 4.0)
+        if self.run_all:
+            model = initialize_model()
+            cavern = model.components['cavern']
+            
+            air = CP.AbstractState("HEOS","Air")
+            air.update(CP.PT_INPUTS,101325,35+273.15 )
+            cavern._p_cavern = 101325
+            
+            cavern._t_cavern = 60+273.15
+            cavern._t_cavern_wall = 10 +273.15
+            ht = cavern._wall_ht_coef(4.0,air)
+            
+            self.assertTrue(ht < 6.0 and ht > 4.0)
     
     def test_evapor_coef(self):
-        # values tested come from 
-        # https://steamtables.online/
-        
-        model = initialize_model()
-        
-        water_m1 = CP.AbstractState("HEOS","Water")
-        water_m1.set_mass_fractions([1.0])
-        water_m1.update(CP.PT_INPUTS,101325,35+372.15 )
-        
-        water = CP.AbstractState("HEOS","Water")
-        water.set_mass_fractions([1.0])
-        water.update(CP.PT_INPUTS,101325,35+374.15)
-        
-        cavern = model.components['cavern']
-        
-        # 100 % vaporization
-        (mass_vapor, mass_change_vapor, e_vapor_brine, e_vapor_cavern) = (
-            cavern._evaporation_energy(water, water_m1, 
-            374.15, 372.15, 374.15, 372.15, 1.0, 1.0))
-        
-        self.assertTrue(mass_vapor > 0.6 and mass_vapor < 0.62)
-        self.assertTrue(mass_change_vapor < 0.041 and mass_change_vapor > 0.039)
-        self.assertTrue(np.abs(e_vapor_brine) > 90100 and
-                        np.abs(e_vapor_brine) < 90200)
+        if self.run_all:
+            # values tested come from 
+            # https://steamtables.online/
+            
+            model = initialize_model()
+            
+            water_m1 = CP.AbstractState("HEOS","Water")
+            water_m1.set_mass_fractions([1.0])
+            water_m1.update(CP.PT_INPUTS,101325,35+372.15 )
+            
+            water = CP.AbstractState("HEOS","Water")
+            water.set_mass_fractions([1.0])
+            water.update(CP.PT_INPUTS,101325,35+374.15)
+            
+            cavern = model.components['cavern']
+            
+            # 100 % vaporization
+            (mass_vapor, mass_change_vapor, e_vapor_brine, e_vapor_cavern) = (
+                cavern._evaporation_energy(water, water_m1, 
+                374.15, 372.15, 374.15, 372.15, 1.0, 1.0))
+            
+            self.assertTrue(mass_vapor > 0.6 and mass_vapor < 0.62)
+            self.assertTrue(mass_change_vapor < 0.041 and mass_change_vapor > 0.039)
+            self.assertTrue(np.abs(e_vapor_brine) > 90100 and
+                            np.abs(e_vapor_brine) < 90200)
     
     
-    def test_salt_cavern(self):
+    def test_H2_salt_cavern(self):
         """
         Perform decompressing of the Cavern.
         
@@ -113,13 +127,86 @@ class TestSaltCavern(unittest.TestCase):
         it properly models adiabatic compression and expansion.
         
         """
-        model = initialize_model()
+        if self.run_all:
+            model = initialize_model()
+            
+            model.run()
+            
+            figd,axd = model.plot_solution([0,1,2,3,4,5])
+            
+            P0 = 9e6 #Pa
+            V0 = 158335.9324 # m3
+            mass0 = 1050284.651
+            mass500000 = 550284.6514
+            
+            T0 = 326.5
+            T500000 = 326.5
+            
+            umassh2 = 2911737.7 # J/kg
+            
+            P500000 = 4715447.242 
+            E0 = P0 * V0 + mass0 * umassh2
+            E500000 = P500000 * V0 + umassh2 * mass500000
+            
+            
+            results = model.components['cavern'].results
+            
+            ind500000 = np.where(np.array(results["Time (sec)"]) > 500000)[0][0]
+            
+            Tcomp0 = results['Cavern temperature (K)'][0]
+            Ecomp0 = results['Energy in cavern (J)'][0]
+            Mcomp0 = results['Mass in cavern (kg)'][0]        
+            
+            
+            Tcomp5e5 = results['Cavern temperature (K)'][ind500000]
+            Ecomp5e5 = results['Energy in cavern (J)'][ind500000]
+            Mcomp5e5 = results['Mass in cavern (kg)'][ind500000]
+            Pcomp5e5 = results['Cavern pressure (Pa)'][ind500000]
+            
+            
+            max_percent_error = 7
+    
+            self.assertTrue(np.abs(100 * (Tcomp0 - T0)/T0) < max_percent_error)
+            self.assertTrue(np.abs(100 * (Ecomp0 - E0)/E0) < max_percent_error)
+            self.assertTrue(np.abs(100 * (Mcomp0 - mass0)/mass0) < max_percent_error)
+            self.assertTrue(np.abs(100 * (E500000 - Ecomp5e5)/E500000) < max_percent_error)
+            self.assertTrue(np.abs(100 * (Pcomp5e5 - P500000)/P500000) < max_percent_error)
+            self.assertTrue(np.abs(100 * (Tcomp5e5 - T500000)/T500000) < max_percent_error)
+
+    def test_H2_Ch4_mixture_salt_cavern(self):
         
-        model.run()
+        if self.run_all:
         
-        figd,axd = model.plot_solution([0,1,2,3,4,5])
-        
-        pass
+            model = initialize_model(mixture=True)
+            
+            cavern = model.components['cavern']
+            
+            #cavern.troubleshooting = True
+            
+            model.run()
+            
+            results = model.components['cavern'].results
+            mass = results['Mass in cavern (kg)']
+            temperature = results['Cavern temperature (K)'][-1]
+            energy = results['Energy in cavern (J)'][-1].sum()
+            pressure = results['Cavern pressure (Pa)'][-1]
+            
+            energyCH4 = CP.PropsSI('H', 'T',326.5, 'P',9e6,'Methane') * mass[0][1]
+            energyH2 = CP.PropsSI('H','T',310,'P',20e6,'Hydrogen') * 12000
+            
+            energy_total = energyCH4 + energyH2
+            
+            
+            # hydrogen mass has been added
+            self.assertTrue(mass[-1][0] > 12e3 - 1 and mass[-1][0] < 12e3 + 1)
+            
+            # pressure has increased 
+            p_final = 9110867.39
+            t_final = 326.4802
+    
+            self.assertTrue(p_final > pressure - 1e5 and p_final < pressure + 1e5)
+            self.assertTrue(t_final > temperature - 1.0 and t_final < temperature + 1.0)
+            self.assertTrue(energy_total > 0.99*energy and energy_total < 1.01 * energy)
 
 
 if __name__ == "__main__":

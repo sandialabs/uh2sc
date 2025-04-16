@@ -362,41 +362,66 @@ def _construct_ordered_fluid_str(fluid_components,fluid_mapping,names=None):
             fluid_str += f"{prestr}{pure_fluid}[{molfrac:.8e}]"
         return fluid_str
     
-def calculate_component_masses(fluid,molar_masses,gas_mass=0.0,liquid_mass=0.0):
-
     
-    if fluid.phase() == CP.iphase_gas or fluid.phase() == CP.iphase_supercritical:
-        if liquid_mass != 0.0:
-            raise ValueError("You cannot have a liquid_mass when the fluid"
-                             +" in the cavern is only gas!")
+def calculate_pressure(fluid,rho_cavern,t_cavern,tol=1e-6, max_iter=100):
+        # P = n * rho * R * T
+          
+        ideal_pressure = fluid.gas_constant()/fluid.molar_mass() * rho_cavern * t_cavern
+        
+        pressure = ideal_pressure
+        pressure0 = 0
+        _iter = 0
+        
+        while (np.abs((pressure - pressure0)/pressure) > tol) and _iter < max_iter:
+            pressure0 = pressure
+            fluid.update(CP.PT_INPUTS,pressure0,t_cavern)
+        
+            Z = fluid.compressibility_factor()
+        
+            pressure = Z * fluid.gas_constant()/fluid.molar_mass() * rho_cavern * t_cavern
+            _iter += 1
             
-        return {'gas':gas_mass * np.array(fluid.get_mass_fractions()),
-                'liquid':np.zeros(len(fluid.fluid_names()))}
+        if _iter == max_iter:
+            raise ValueError("No convergence on pressure calculation!")
+    
+        return pressure
+    
+def calculate_component_masses(fluid,mass):
+    return np.array(fluid.get_mass_fractions()) * mass
+    
+    # if fluid.phase() == CP.iphase_gas or fluid.phase() == CP.iphase_supercritical:
+    #     if liquid_mass != 0.0:
+    #         raise ValueError("You cannot have a liquid_mass when the fluid"
+    #                          +" in the cavern is only gas!")
+            
+    #     return {'gas':gas_mass * np.array(fluid.get_mass_fractions()),
+    #             'liquid':np.zeros(len(fluid.fluid_names()))}
         
-    elif fluid.phase() == CP.iphase_liquid:
-        if gas_mass != 0:
-            raise ValueError("You canot have a gas_mass when the fluid"
-                             +" in the cavern is only liquid!")
-        return {'gas':np.zeros(len(fluid.fluid_names())),
-                'liquid':liquid_mass * np.array(fluid.get_mass_fractions())}            
+    # elif fluid.phase() == CP.iphase_liquid:
+    #     if gas_mass != 0:
+    #         breakpoint()
+    #         raise ValueError("You canot have a gas_mass when the fluid"
+    #                          +" in the cavern is only liquid!")
+    #     return {'gas':np.zeros(len(fluid.fluid_names())),
+    #             'liquid':liquid_mass * np.array(fluid.get_mass_fractions())}            
         
-    elif fluid.phase() == CP.iphase_twophase:
+    # elif fluid.phase() == CP.iphase_twophase:
     
         
-        gmolfracs = {fluid_name:gmol for fluid_name,gmol in zip(fluid.fluid_names(),fluid.mole_fractions_vapor())}
-        lmolfracs = {fluid_name:lmol for fluid_name,lmol in zip(fluid.fluid_names(),fluid.mole_fractions_liquid())}
+    #     gmolfracs = {fluid_name:gmol for fluid_name,gmol in zip(fluid.fluid_names(),fluid.mole_fractions_vapor())}
+    #     lmolfracs = {fluid_name:lmol for fluid_name,lmol in zip(fluid.fluid_names(),fluid.mole_fractions_liquid())}
 
-        gsum = np.array([gmol * molar_masses[name] for name, gmol in gmolfracs.items()]).sum()
-        lsum = np.array([lmol * molar_masses[name] for name, lmol in lmolfracs.items()]).sum()
+    #     gsum = np.array([gmol * molar_masses[name] for name, gmol in gmolfracs.items()]).sum()
+    #     lsum = np.array([lmol * molar_masses[name] for name, lmol in lmolfracs.items()]).sum()
         
-        gmass = gas_mass * np.array([gmol * molar_masses[name]/gsum for name, gmol in gmolfracs.items()])
-        lmass = liquid_mass * np.array([lmol * molar_masses[name]/lsum for name, lmol in lmolfracs.items()])
+    #     gmass = gas_mass * np.array([gmol * molar_masses[name]/gsum for name, gmol in gmolfracs.items()])
+    #     lmass = liquid_mass * np.array([lmol * molar_masses[name]/lsum for name, lmol in lmolfracs.items()])
 
-        return {'gas':gmass, 'liquid':lmass}
+    #     return {'gas':gmass, 'liquid':lmass}
         
-    else:
-        breakpoint()
-        raise NotImplementedError("Only gas, liquid, or gas and liquid mixtures are modeled!")
+    # else:
+    #     breakpoint()
+    #     raise NotImplementedError("Only gas, liquid, or gas and liquid mixtures are modeled!")
         
 def brine_average_pressure(fluid,water,height_total,height_brine,t_brine):
     """

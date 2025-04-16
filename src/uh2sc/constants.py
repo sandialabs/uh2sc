@@ -47,4 +47,7 @@ class Constants:
     stefan_boltzman = {'value':5.67e-8,
                        'units': ("Watts per meter squared per Kelvin to the "
                        +"fourth (W/m2/K4)")}
+    atmospheric_pressure = {'value':1.01325e5,
+                            'units':("Pascals"),
+                            'notes':"Eventually this can be dictated by barometric pressure"}
     

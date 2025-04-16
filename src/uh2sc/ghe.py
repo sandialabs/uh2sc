@@ -208,8 +208,8 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
             for tup in self.previous_adjacent_components:
                 component_name = tup[0]
                 component = self._model.components[component_name]
-                if hasattr(component,"q_brine_wall") and hasattr(component,"q_cavern_wall"):
-                    Q_in += component.q_brine_wall + component.q_cavern_wall
+                if hasattr(component,"_q_axisym"):
+                    Q_in += component._q_axisym[0]
                 else:
                     raise NotImplementedError("Only caverns can be connected"
                                               +" to axisymmetric heat transfer "

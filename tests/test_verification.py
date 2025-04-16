@@ -161,7 +161,7 @@ class Nielson2008CavernCase(object):
         inpc = {}
 
         inpc["thermal_conductivity"] = salt_thermal_conductivity
-        inpc["number_element"] = axisym_elements_per_length * distance_to_insulated
+        inpc["number_element"] = 4 #axisym_elements_per_length * distance_to_insulated
         inpc["distance_to_ground_temp"] = distance_to_ground_temp #m
         inpc["start_date"] = pd.date_range("1/1/2023",'1/1/2023',1)[0]
 

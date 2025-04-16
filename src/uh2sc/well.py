@@ -11,6 +11,10 @@ from uh2sc.constants import Constants as const
 from uh2sc.transport import annular_nusselt, circular_nusselt
 from uh2sc.utilities import (calculate_component_masses)
 from uh2sc.abstract import AbstractComponent
+from uh2sc.constants import Constants
+
+const = Constants()
+
 #from uh2sc.hdclass import ImplicitEulerAxisymmetricRadialHeatTransfer
 
 
@@ -135,11 +139,10 @@ class Well(AbstractComponent):
     def previous_adjacent_components(self):
         """
         Interface variable indices for the previous component
+        currently wells do not connect to elements before them.
         """
-        prev_comp = {}
-        for wname, well in self._prev_components:
-            prev_comp[wname] = self._model.components[wname]
-        return prev_comp
+
+        return None
             
 
     @property
@@ -148,10 +151,10 @@ class Well(AbstractComponent):
         interface variable indices for the next component which can only be 
         1 GHE for a cavern (even though this is written as a loop)
         """
-        next_comp = {}
-        for ghe_name, ghe in self._next_components.items():
-            next_comp[ghe_name] = self._model.components[ghe_name]
-        return next_comp
+        if self._model.is_test_mode:
+            return self._model.test_inputs["cavern"]
+        else:
+            return {'cavern':self._model.components['cavern']}
         
         
     @property
@@ -202,9 +205,7 @@ class Well(AbstractComponent):
                         np.array of length number_elements + 1
                 
         """
-        if x is None:
-            self.load_var_values_from_x(self._model.xg)
-        else:
+        if x is not None:
             self.load_var_values_from_x(x)
         
         residuals = np.zeros(self._NUM_EQN)
@@ -213,15 +214,40 @@ class Well(AbstractComponent):
         for comp_name, comp in self.next_adjacent_components.items():
             for pname, pipe in self.pipes.items():
                 
+            
                 mdot = np.interp(self._model.time,pipe.valve['time'],pipe.valve['mdot'])
                 total_flow = pipe.mass_rates[0,:].sum()
-                t_exit, p_exit = pipe.initial_adiabatic_static_column(
-                    comp._t_cavern, comp._p_cavern, total_flow)
                 
+                if mdot > 0: # flow is into the cavern
+                
+                    fluid = pipe.fluid
+                    t_in = pipe.valve['reservoir']['temperature']
+                    p_in = pipe.valve['reservoir']['pressure']
+                    t_exit, p_exit = pipe.initial_adiabatic_static_column(
+                            t_in, p_in, mdot)
+                    if p_exit[-1] < comp._p_cavern:
+                        # insufficient potential kinetic energy to flow!
+                        warn("Flow is not occuring because reservoir pressure"
+                             +" plus adiabatic column pressure change is less"
+                             +" than the cavern pressure!")
+                        mdot = 0
+                else:
+                    fluid = comp._fluid
+                    t_in = comp._t_cavern
+                    p_in = comp._p_cavern
+                    t_exit, p_exit = pipe.initial_adiabatic_static_column(
+                            t_in, p_in, mdot)
+                    if p_exit[0] < const.atmospheric_pressure['value']:
+                        # insufficient potential kinetic energy to flow!
+                        warn("Flow is not occuring because cavern pressure"
+                             +" minus adiabatic column pressure change is less"
+                             +" than atmospheric pressure. Caverns should not"
+                             +" be run at low pressure!")
+                        mdot = 0
 
-                gmdots = calculate_component_masses(comp._fluid, 
-                        self._model.molar_masses, gas_mass=mdot)['gas']
+                gmdots = calculate_component_masses(fluid, mdot)
                 # mass balance of each gas component
+                
                 residuals[0:self._number_fluids] = pipe.mass_rates[0,:] - gmdots
                 _eqn += self._number_fluids
                 residuals[_eqn] = pipe.temp_fluid[-1] - t_exit[-1]
@@ -267,15 +293,17 @@ class Well(AbstractComponent):
         # THIS HAS TO BE UPDATED IF YOU IMPLEMENT CONTROL VOLUMES!!!
         xloc = xg[self.global_indices[0]:self.global_indices[1]+1]
         for name, pipe in self.pipes.items():
-            pipe.mass_rates = np.zeros((2,self._number_fluids))
-            pipe.mass_rates[0,:] = xloc[0:self._number_fluids]
-            pipe.mass_rates[1,:] = xloc[0:self._number_fluids]
-            pipe.mass_rates = np.array([[xloc[0]],[xloc[0]]])
+            pipe.mass_rates = np.array([xloc[0:self._number_fluids]])
             pipe.temp_fluid = np.array([xloc[1],xloc[3]])
             pipe.pres_fluid = np.array([xloc[2],xloc[4]])
             
             
     def shift_solution(self):
+        """
+        Currently nothing has to happen hear because the pipe 
+        is a purely algebraic function whose boundary conditions do 
+        not depend on the previous time step.
+        """
         pass
 
 
@@ -487,9 +515,7 @@ class VerticalPipe(object):
             # mass balance for each gaseous fluid.
             if well is not None: # None in model call that just needs initial_adiabatic_column function
                 mass_rates = calculate_component_masses(self.fluid,
-                                                       self._well._model.molar_masses,
-                                                       gas_mass=mass_rate0,
-                                                       liquid_mass=0.0)['gas']
+                                                       mass_rate0)
             else:
                 mass_rates = np.zeros((num_cv_p_1,self._number_fluids))
                 

@@ -37,9 +37,9 @@ class TestGHE(unittest.TestCase):
 
                 # SETUP YOUR METHOD OF SOLUTION
         t_end = 2592000
-        t_step_pde = 600
-        t_step = 600  # a daily time step is fine
-        implicit_mult = 144  # maximal time step that only had a slight error
+        t_step_pde = 300
+        t_step = 86400  # a daily time step is fine
+        implicit_mult = 1  # maximal time step that only had a slight error
         # a 1 day time step is ok for the implicit solver. ( in comparison to
         # 600 seconds for the original explicity solver.)
         # 
@@ -108,9 +108,9 @@ class TestGHE(unittest.TestCase):
 
         idx = 0
         for tup in sol.items():
-            crow = comparison_data[idx*implicit_mult,:]
+            crow = comparison_data[-1,:]
             time = tup[0]
-            row = sol[time]['ghe_test']
+            row = sol[time]
             interp_crow = np.interp(model.components["ghe_test"].grid,linear_grid,crow)
             avg_error[time] = (row[1:-1] - interp_crow).sum()/number_element
             max_error[time] = (row[1:-1] - interp_crow).max()

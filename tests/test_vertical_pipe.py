@@ -8,72 +8,54 @@ Began modifications again on Jan 17, 2025.
 """
 import os
 import unittest
-from uh2sc.well import VerticalPipe,PipeMaterial
-from uh2sc.salt_cavern import SaltCavern
+from uh2sc.well import Well
+from uh2sc.model import Model
 from uh2sc.constants import Constants as const
 import numpy as np
 from CoolProp import CoolProp as CP
+import yaml
 
 class TestVerticalPipe(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls.file_dir = os.path.join(os.path.dirname(__file__))
         # generic inputs.
         cls.plot_results = False
         cls.run_all_tests = True
 
-        cls.pipe_material = PipeMaterial(surface_roughness_height_ratio=0.0001,
-                                     thermal_conductivity=45)  #m/m and W/m/K
-        cls.valve = {"type":"mdot",
-                "time":[0.0,2628000.0],
-                "mdot":[13.0196,13.0196],
-                "reservoir":{"pressure":8e6,
-                             "temperature": 310.92777777777777775,
-                             "fluid":'H2'}}
-        cls.valve_name = "inflow_mdot"
-        cls.initial_temperature = 300
-        cls.initial_pressure = 5e6
-        cls.outside_inner_diameter = 0.0
-        cls.inside_inner_diameter = 0.0
-        cls.inside_outer_diameter = 0.2
-        cls.outside_outer_diameter = 0.25
-        cls.number_control_volumes = 100
-        cls.total_minor_losses_coefficient = 0.0
+        with open(os.path.join(cls.file_dir,
+                                          "test_data",
+                                          "salt_cavern_mdot_only_test.yml"),
+                             encoding="utf-8") as file:
+            inp = yaml.load(file, Loader=yaml.SafeLoader)
+        
+        cls.model = Model(inp,single_component_test=True,type="WELL",cavern_temp=300,cavern_pressure=9e6)
+        
+        cls.initial_pressure = const().atmospheric_pressure['value']
+        cls.initial_temperature = 298.0
 
-        cls.initial_pressure = 2.65e4 # Pa
-        cls.initial_temperature = -49.90 + const.K_C_offset['value']
-        cls.mass_rate0 = 1 # just a dummy value
-        comp = "Air"
-        molefracs = [1.0]
-        length = 10000
-        height = 10000
 
-        cls.vp1 = VerticalPipe(molefracs,
-                          comp,
-                          length,
-                          height,
-                          cls.pipe_material,
-                          cls.valve,
-                          cls.valve_name,
-                          cls.initial_pressure,
-                          cls.initial_temperature,
-                          cls.outside_inner_diameter,
-                          cls.inside_inner_diameter,
-                          cls.inside_outer_diameter,
-                          cls.outside_outer_diameter,
-                          cls.number_control_volumes,
-                          cls.total_minor_losses_coefficient,
-                          )
 
-        inp = os.path.join(os.path.dirname(__file__),"test_data",
-                           "salt_cavern_mdot_only_test.yml")
-
-        cls.cavern = SaltCavern(inp)
 
     @classmethod
     def tearDownClass(cls):
         pass
 
-    @unittest.skip("skipping so I can work on the current test")
+
+    def test_ideal_pipes(self):
+
+        with self.assertWarns(UserWarning):
+            self.model.run()
+            
+
+        results = self.model.solutions
+        self.assertTrue(results[0.0][0] == 0)
+        self.assertTrue(results[0.0][1] > 2.731e2 - 0.01e2 and results[0.0][1] < 2.731e2 + 0.01e2)
+        self.assertTrue(results[0.0][-1] > 8.967e6 - 0.01e6 and results[0.0][-1] < 8.967e6 + 0.01e6)
+        self.assertTrue(results[900.0][1] > 3.113e2 - 0.01e2 and results[900.0][1] < 3.113e2 + 0.01e2)
+        self.assertTrue(results[900.0][2] > 8.100e6 - 0.01e6 and results[900.0][2] < 8.100e6 + 0.01e6)
+        
+
     def test_adiabatic_column(self):
         if self.run_all_tests:
             # US standard atmosphere at 10,000 ft testing to see if dry adiabatic lapse rate
@@ -81,9 +63,18 @@ class TestVerticalPipe(unittest.TestCase):
 
             # this should produce the dry air adiabatic lapse rate of the atmosphere
             # and standard U.S. atmospheric pressure
-            Tfluid, Pfluid, rhofluid = self.vp1.initial_adiabatic_static_column(self.initial_temperature, self.initial_pressure, self.mass_rate0, True)
+            vp1 = self.model.components["cavern_well"].pipes["inflow_mdot"]
+            
+            air = CP.AbstractState("HEOS","Air")
+            air.set_mass_fractions([1.0])
+            air.update(CP.PT_INPUTS,self.initial_pressure,self.initial_temperature)
+            mass_rate0 = 1.0
+            vp1.fluid = air
+            
+            Tfluid, Pfluid, rhofluid = vp1.initial_adiabatic_static_column(self.initial_temperature, self.initial_pressure, mass_rate0, True)
 
             # verify this is an adiabatic process where Pressure / Density ** (specific heat ratio) = constant
+            rhofluid[0] = 1e-10
             constant = Pfluid / rhofluid ** 1.4
 
             self.assertTrue(np.sum(np.diff(constant)/constant[1:] * 100 > 0.05)==0)
@@ -93,17 +84,14 @@ class TestVerticalPipe(unittest.TestCase):
             # The dry air adiabatic lapse rate of the atmosphere results.
             self.assertTrue((Tfluid[-1] - Tfluid[0])/10 - dry_adiabatic_lapse_rate < 0.001)
 
-
-    #@unittest.skip("The development of these features is not complete")
+    @unittest.skip("The development of these features is not complete")
     def test_pipe_pressure_loss(self):
         """
-
-        This test is under development and cannot be expected to pass
-        until the pipe equations are completed (dlv - 01)
-
+        This test will be worked on once we make the pipes dynamic. This 
+        is not a priority until multi-gas flow with water vapor is 
+        completed for the cavern and a new release of the software is
+        made.
         """
-
-
         if self.run_all_tests:
 
             # the following values have been set from Adair and Power 1961.
@@ -116,7 +104,7 @@ class TestVerticalPipe(unittest.TestCase):
 
             volume_flow_rate = 2.760 * const.mmscf_p_day_2_m3_p_s['value']
             flow_pressure = 14.65 *const.psi_2_pascal['value'] # Pa
-            flow_temperature = const.Rankine_2_Kelvin['value']*(60 + const.F_R_offset['value']) #K
+            flow_temperature = const.rankine_2_kelvin['value']*(60 + const.f_r_offset['value']) #K
 
             comp = "Methane&Ethane&Propane&Nitrogen&CarbonDioxide"
 

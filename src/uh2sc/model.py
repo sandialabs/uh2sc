@@ -3,6 +3,8 @@
 from copy import deepcopy
 from warnings import warn
 import numpy as np
+import logging
+
 from matplotlib import pyplot as plt
 
 import CoolProp.CoolProp as CP
@@ -116,8 +118,12 @@ class Model(AbstractComponent):
 
     def run(self):
         for time in self.times:
+            if 'cavern' in self.components:
+                if hasattr(self.components['cavern'], "troubleshooting"):
+                    print(time)
             self.time = time
-            print(time)
+            
+            logging.info(f"UH2SC model beginning calculations for time={time}.")
             # solve the current time step
             tup = self.solver.solve(self)
             
@@ -125,7 +131,6 @@ class Model(AbstractComponent):
             if solver_converged:
                 # update the state of the model
                 self.shift_solution()
-
 
                 # gather the results
                 self._solutions[time] = deepcopy(self.get_x())
@@ -316,6 +321,8 @@ class Model(AbstractComponent):
         """
 
         xg_descriptions = []
+        self.xg = []
+        self.xg_descriptions = []
         xg = []
         num_var = {}
         components = {}
@@ -353,9 +360,11 @@ class Model(AbstractComponent):
         self.xg_descriptions = xg_descriptions
         self.xg = np.array(xg)
         self.components = components
-        
+
         if not self.is_test_mode:
             self._connect_components()
+            
+        self.load_var_values_from_x(self.xg)
 
 
     def _build_ghes(self,x_desc,xg,components):
@@ -435,6 +444,10 @@ class Model(AbstractComponent):
             #end of global indices for this component
             end_idx = len(xg)-1
 
+            
+            self.xg = xg
+            self.xg_descriptions = x_desc
+
             components[name] = ImplicitEulerAxisymmetricRadialHeatTransfer(inner_radius,
                   ghe["thermal_conductivity"],
                   ghe["density"],
@@ -460,19 +473,33 @@ class Model(AbstractComponent):
         if self.is_test_mode:
             fluid_name = self.inputs["initial"]["fluid"]
             self.fluids = {}
-            self.fluids["cavern"] = CP.AbstractState("HEOS",fluid_name)
-            self.fluids["cavern"].set_mass_fractions([1.0])
-            self.fluids["cavern"].update(CP.PT_INPUTS,
-                                         self.inputs["initial"]["pressure"],
-                                         self.inputs["initial"]["temperature"])
+
+            
+            comp, massfracs, compSRK, fluid = process_CP_gas_string(fluid_name)
+            
+            fluid.update(CP.PT_INPUTS,self.inputs['initial']['pressure'],self.inputs['initial']['temperature'])
+            
+            self.fluids["cavern"] = fluid
             self.molar_masses = {}
-            self.molar_masses[fluid_name] = self.fluids["cavern"].molar_mass()
+            for pfluid in fluid.fluid_names():
+                tempfluid = CP.AbstractState("HEOS",pfluid)
+                tempfluid.set_mass_fractions([1.0])
+
+                self.molar_masses[pfluid] = tempfluid.molar_mass()
+                
             self.test_inputs["r_radial"] = (np.log(self.test_inputs['r_out']
                                                    /(self.inputs['cavern']['diameter']/2.0))
                                             / (2 * np.pi * self.inputs["cavern"]["height"] 
                                                * self.test_inputs['salt_therm_cond']))
+            if '&' in fluid_name:
+                fluid_str = "H2[1.0]&Methane[0.0]"  # fill methane cavern with new hydrogen
+                rcomp, rmassfracs, rcompSRK, rfluid = process_CP_gas_string(fluid_str)
+                rfluid.specify_phase(CP.iphase_gas)
+                rfluid.update(CP.PT_INPUTS, 20e6, 310)
+                
+                self.fluids['cavern_well'] = rfluid
+
         else:
-            pass
             prev_components = self.inputs['wells']
             ghe_name = self.inputs['cavern']['ghe_name']
             next_components = {ghe_name:self.inputs["ghes"][ghe_name]}
@@ -523,15 +550,17 @@ class Model(AbstractComponent):
         
         # mass balance for each gaseous fluid.
         mass_dict = calculate_component_masses(self.fluids['cavern'],
-                                               self.molar_masses,
-                                               gas_mass=m_cavern,
-                                               liquid_mass=0.0)
+                                               mass=m_cavern,
+                                               )
             
-        for m_pure, fname in zip(mass_dict['gas'],self.fluids['cavern'].fluid_names()):
+        for m_pure, fname in zip(mass_dict,self.fluids['cavern'].fluid_names()):
             xg += [m_pure]
             x_desc += [f"Cavern {fname} mass (kg)"]
         
         end_idx = len(xg)-1  # minus one because of 0 indexing!
+        
+        self.xg = xg
+        self.xg_description = x_desc
         
         components["cavern"] = SaltCavern(self.inputs,global_indices=
                                           (beg_idx,end_idx),
@@ -548,7 +577,12 @@ class Model(AbstractComponent):
         """
         
         if len(self.test_inputs) != 0:
-            pass
+            find_all_fluids(self)
+            
+            self.test_inputs["cavern"] = {"cavern":SaltCavern(self.inputs,global_indices=
+                                              (-2,-1),
+                                              model=self)}
+            
         else:
             pass
             # this is undeveloped
@@ -590,8 +624,7 @@ class Model(AbstractComponent):
                     pure_fluid_names = self.fluids[wname][vname].fluid_names()
                     massflows = calculate_component_masses(
                         self.fluids[wname][vname],
-                        self.molar_masses,
-                        mdot.sum())['gas']
+                        mdot.sum())
                     
                     for massflow, pname in zip(massflows, pure_fluid_names):
                         xg += [massflow]
@@ -659,6 +692,9 @@ class Model(AbstractComponent):
                 raise NotImplementedError("We only have implemented ideal"
                                           +" wells with 1 pipe!")
             end_idx = len(xg)-1
+            
+            self.xg = xg
+            self.xg_descriptions = x_desc
             
             components[wname] = Well(wname, well, self, (beg_idx,end_idx))
             
