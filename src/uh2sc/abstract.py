@@ -73,6 +73,17 @@ class AbstractComponent(ABC):
 
     @abstractmethod
     def load_var_values_from_x(self,xg):
+        """
+        Values must be loaded from the global variable xg
+        or else it is likely that you will NOT actually connect
+        different components. You need to pull from all variable inside 
+        this component and all variables that bridge between components from
+        xg!!!
+        
+        You may have to rederive some quantities if the original xg values do not
+        directly transfer. Otherwise you risk never getting an update for the
+        next time step.
+        """
         pass
     
     @abstractmethod

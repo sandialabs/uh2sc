@@ -6,7 +6,9 @@
 
 import numpy as np
 
+from CoolProp import CoolProp as CP
 from uh2sc.abstract import AbstractComponent, ComponentTypes
+from uh2sc.utilities import calculate_cavern_pressure
 
 
 class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
@@ -193,10 +195,11 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
             Tgvec = self.Tgvec
             Q[-1] = self.Q[-1]
         else:
-            #xx = x.primal
-            Q[0] = x[0]
-            Tgvec = x[1:-1]
-            Q[-1] = x[-1]
+            gind = self.global_indices
+            Q[0] = x[gind[0]]
+            Tgvec = x[gind[0]+1:gind[1]]
+            Q[-1] = x[gind[1]]
+            
 
         # set the interface condition equations
         # or boundary condition equations
@@ -204,17 +207,7 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
         if len(prev_comp) == 0:
             residuals[0] = Q[0] - self.bc["Q0"]
         else:
-            Q_in = 0.0
-            for tup in self.previous_adjacent_components:
-                component_name = tup[0]
-                component = self._model.components[component_name]
-                if hasattr(component,"_q_axisym"):
-                    Q_in += component._q_axisym[0]
-                else:
-                    raise NotImplementedError("Only caverns can be connected"
-                                              +" to axisymmetric heat transfer "
-                                              +"in the current version!")
-            residuals[0] = Q[0] - Q_in
+            residuals[0] = Q[0] - self._q_axi_cavern
             
         next_comp = self.next_adjacent_components
         if len(next_comp) == 0:
@@ -234,7 +227,7 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
         Q[1:-1] = [self._Qfunc(Tgvec,idx) for idx in range(0,self.number_elements-1)]
 
         #Euler implicit integration of the ODE
-
+            
         residuals[1:-2] = np.array([(Q[idx]-(Q[idx+1]+Qg[idx-1])) * self.dt / self.Cg[idx-1]
                     + Tgvec_m1[idx] - Tgvec[idx] for idx in range_index])
 
@@ -258,8 +251,51 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
         return np.array([self.Q[0]] + list(self.Tgvec) + [self.Q[-1]])
 
     def load_var_values_from_x(self,xg):
+        
+        
         bind,eind = self.global_indices
         self.Tgvec = xg[bind+1:eind]
         self.Q[0] = xg[bind]
         self.Q[-1] = xg[eind]
+        
+        cavern = self._model.components['cavern']
+        
+        cgind = cavern.global_indices
+        t_cavern = xg[cgind[0]]
+        t_cavern_wall = xg[cgind[0]+1]
+        t_brine = xg[cgind[0]+3]
+        t_brine_wall = xg[cgind[0]+4]
+        fluid = cavern._fluid
+        water = cavern._water
+        
+        m_cavern = xg[cgind[1]-cavern._number_fluids+1:cgind[1]+1]
+        rho_cavern = m_cavern.sum() / cavern._vol_cavern
+        
+        
+        mass_frac = m_cavern / m_cavern.sum()
+        fluid.set_mass_fractions(mass_frac)
+        
+        (p_brine, solubility_brine, rho_brine) = (
+            cavern._brine_average_pressure(fluid, water))
+        
+        water.update(CP.PT_INPUTS,p_brine,t_brine)
+        
+        
+        height_brine = cavern._height_brine
+        height_cavern = cavern._height_total - height_brine
+        height_total = cavern._height_total
+        
+        p_cavern = calculate_cavern_pressure(fluid,rho_cavern,t_cavern)
+        
+        fluid.update(CP.PT_INPUTS,p_cavern,t_cavern)
+        
+        q_cavern, q_brine = cavern.cavern_wall_heat_flux(t_cavern,t_cavern_wall,
+                                  t_brine,t_brine_wall,
+                                  fluid,water,height_cavern,
+                                  height_brine,height_total)
+        
+        self._q_axi_cavern = q_cavern + q_brine
+        
+        
+        
 

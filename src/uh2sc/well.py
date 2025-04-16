@@ -9,7 +9,8 @@ import numpy as np
 from CoolProp import CoolProp as CP
 from uh2sc.constants import Constants as const
 from uh2sc.transport import annular_nusselt, circular_nusselt
-from uh2sc.utilities import (calculate_component_masses)
+from uh2sc.utilities import (calculate_component_masses,
+                             calculate_cavern_pressure)
 from uh2sc.abstract import AbstractComponent
 from uh2sc.constants import Constants
 
@@ -214,7 +215,7 @@ class Well(AbstractComponent):
         for comp_name, comp in self.next_adjacent_components.items():
             for pname, pipe in self.pipes.items():
                 
-            
+                
                 mdot = np.interp(self._model.time,pipe.valve['time'],pipe.valve['mdot'])
                 total_flow = pipe.mass_rates[0,:].sum()
                 
@@ -290,12 +291,14 @@ class Well(AbstractComponent):
 
 
     def load_var_values_from_x(self,xg):
-        # THIS HAS TO BE UPDATED IF YOU IMPLEMENT CONTROL VOLUMES!!!
+        # THIS HAS TO BE UPDATED IF YOU IMPLEMENT more than one CONTROL VOLUMES!!!
+        nfl = self._number_fluids
         xloc = xg[self.global_indices[0]:self.global_indices[1]+1]
         for name, pipe in self.pipes.items():
-            pipe.mass_rates = np.array([xloc[0:self._number_fluids]])
-            pipe.temp_fluid = np.array([xloc[1],xloc[3]])
-            pipe.pres_fluid = np.array([xloc[2],xloc[4]])
+            pipe.mass_rates = np.array([xloc[0:nfl]])
+            pipe.temp_fluid = np.array([xloc[nfl],xloc[nfl+2]])
+            pipe.pres_fluid = np.array([xloc[nfl+1],xloc[nfl+3]])
+    
             
             
     def shift_solution(self):

@@ -12,7 +12,7 @@ import logging
 from CoolProp import CoolProp as CP
 
 from uh2sc.abstract import AbstractComponent
-from uh2sc.utilities import calculate_component_masses, calculate_pressure
+from uh2sc.utilities import calculate_component_masses, calculate_cavern_pressure
 from uh2sc.constants import Constants
 from uh2sc.thermodynamics import (density_of_brine_water, 
                                   solubility_of_nacl_in_h2o)
@@ -481,14 +481,14 @@ class SaltCavern(AbstractComponent):
         fluid_m1 = self._fluid_m1
         water = self._water
         water_m1 = self._water_m1
-        p_cavern = calculate_pressure(fluid,rho_cavern,t_cavern)
+        p_cavern = calculate_cavern_pressure(fluid,rho_cavern,t_cavern)
         
 
         
         
         
         water.update(CP.DmassT_INPUTS,rho_brine,t_brine)
-        p_cavern_m1 = calculate_pressure(fluid_m1, rho_cavern_m1, t_cavern_m1)
+        p_cavern_m1 = calculate_cavern_pressure(fluid_m1, rho_cavern_m1, t_cavern_m1)
         #fluid_m1.update(CP.DmassT_INPUTS, rho_cavern_m1, t_cavern_m1)
         water_m1.update(CP.DmassT_INPUTS,rho_brine_m1, t_brine_m1)
 
@@ -521,30 +521,11 @@ class SaltCavern(AbstractComponent):
         q_axi_total, q_axi_brine, q_axi_cavern = self._axisymmetric_heat_flux(
             t_cavern_wall,t_brine_wall,height_cavern)
 
-        ht_coef_wall = self._wall_ht_coef(height_cavern,fluid)
-        # TODO, you are just using water, you need it to be brine! maybe you should
-        # write a class that inherits from the CoolProp Abstract state but incorporates
-        # the brine properties when needed.
-        #breakpoint()
-        ht_coef_brine_wall = self._wall_ht_coef(height_brine,water)
 
-        # same as above
-        q_cavern_wall = ((self._area_horizontal + self._area_vertical * 
-                          (1 - height_cavern/
-                           height_total))
-            * ht_coef_wall
-            * (t_cavern_wall - t_cavern))
-        
-        q_brine_wall = ((self._area_horizontal + self._area_vertical * 
-                               height_brine / height_total)
-                               * ht_coef_brine_wall
-                               * (t_brine_wall - t_brine))
-
-
-        
-        
-        
-
+        q_cavern_wall, q_brine_wall = self.cavern_wall_heat_flux(t_cavern,
+                                  t_cavern_wall,t_brine,t_brine_wall,
+                                  fluid,water,height_cavern,height_brine,
+                                  height_total)
         
         # RADIATION ENERGY TRANSFER FROM BRINE TO CAVERN WALLS
         f12 = self._radiation_vf(diameter_cavern,height_cavern)
@@ -723,7 +704,7 @@ class SaltCavern(AbstractComponent):
         total_mass = self._m_cavern.sum()
         self._fluid_m1.set_mass_fractions(self._m_cavern/total_mass)
         rho_cavern = total_mass / self._vol_cavern
-        p_cavern = calculate_pressure(self._fluid_m1, rho_cavern, self._t_cavern)
+        p_cavern = calculate_cavern_pressure(self._fluid_m1, rho_cavern, self._t_cavern)
         self._p_cavern_m1 = self._fluid.p()
         self._water_m1.update(CP.PT_INPUTS,p_brine,self._t_brine)
         
@@ -757,7 +738,7 @@ class SaltCavern(AbstractComponent):
             for cname, comp in self._next_components.items():
                 if isinstance(comp, ImplicitEulerAxisymmetricRadialHeatTransfer):
                     self._q_axisym.append(xg[comp.global_indices[0]]) # first place is the wall fliux
-                    self._t_axisym.append(xg[comp.global_indices[1]]) # second place is the first temperature
+                    self._t_axisym.append(xg[comp.global_indices[0]+1]) # second place is the first temperature
                 else:
                     raise NotImplementedError("Only Axisymmetric heat transfer "
                                               +"can be a next component for salt"
@@ -796,7 +777,28 @@ class SaltCavern(AbstractComponent):
                                               +"salt caverns currently!")
                 
                 
-    
+    def cavern_wall_heat_flux(self,t_cavern,t_cavern_wall,t_brine,t_brine_wall,
+                              fluid,water,height_cavern,height_brine,height_total):
+        ht_coef_wall = self._wall_ht_coef(height_cavern,fluid)
+        # TODO, you are just using water, you need it to be brine! maybe you should
+        # write a class that inherits from the CoolProp Abstract state but incorporates
+        # the brine properties when needed.
+        #breakpoint()
+        ht_coef_brine_wall = self._wall_ht_coef(height_brine,water)
+
+        # same as above
+        q_cavern_wall = ((self._area_horizontal + self._area_vertical * 
+                          (1 - height_cavern/
+                           height_total))
+            * ht_coef_wall
+            * (t_cavern_wall - t_cavern))
+        
+        q_brine_wall = ((self._area_horizontal + self._area_vertical * 
+                               height_brine / height_total)
+                               * ht_coef_brine_wall
+                               * (t_brine_wall - t_brine))
+        
+        return q_cavern_wall, q_brine_wall
     
     def _wall_ht_coef(self, length,cfluid):
         """

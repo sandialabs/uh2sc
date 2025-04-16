@@ -363,7 +363,7 @@ def _construct_ordered_fluid_str(fluid_components,fluid_mapping,names=None):
         return fluid_str
     
     
-def calculate_pressure(fluid,rho_cavern,t_cavern,tol=1e-6, max_iter=100):
+def calculate_cavern_pressure(fluid,rho_cavern,t_cavern,tol=1e-6, max_iter=100):
         # P = n * rho * R * T
           
         ideal_pressure = fluid.gas_constant()/fluid.molar_mass() * rho_cavern * t_cavern
