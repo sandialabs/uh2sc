@@ -275,6 +275,7 @@ class NewtonSolver(object):
                 r = r_
                 r_norm = new_norm
             else:
+                #breakpoint()
                 r = model.evaluate_residuals()
                 r_norm = np.max(abs(r))
 
@@ -300,7 +301,6 @@ class NewtonSolver(object):
 
             # Call Linear solver
             try:
-                breakpoint()
                 d = -sp.linalg.spsolve(J, r, permc_spec="COLAMD", use_umfpack=False)
             except sp.linalg.MatrixRankWarning:
                 return (
@@ -330,7 +330,6 @@ class NewtonSolver(object):
                         alpha = alpha * self.rho
 
                 if iter_bt + 1 >= self.bt_maxiter:
-
                     return (
                         SolverStatus.error,
                         "Line search failed at iteration " + str(outer_iter),

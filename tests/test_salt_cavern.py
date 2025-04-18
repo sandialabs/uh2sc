@@ -87,7 +87,8 @@ class TestSaltCavern(unittest.TestCase):
             
             cavern._t_cavern = 60+273.15
             cavern._t_cavern_wall = 10 +273.15
-            ht = cavern._wall_ht_coef(4.0,air)
+            ht = cavern._wall_ht_coef(4.0,air,cavern._t_cavern,
+                                      cavern._t_cavern_wall,cavern._p_cavern)
             
             self.assertTrue(ht < 6.0 and ht > 4.0)
     
@@ -109,7 +110,7 @@ class TestSaltCavern(unittest.TestCase):
             cavern = model.components['cavern']
             
             # 100 % vaporization
-            (mass_vapor, mass_change_vapor, e_vapor_brine, e_vapor_cavern) = (
+            (mass_vapor, mass_change_vapor, rho_vapor, e_vapor_brine, e_vapor_cavern, h_vapor) = (
                 cavern._evaporation_energy(water, water_m1, 
                 374.15, 372.15, 374.15, 372.15, 1.0, 1.0))
             
@@ -195,7 +196,6 @@ class TestSaltCavern(unittest.TestCase):
             energyH2 = CP.PropsSI('H','T',310,'P',20e6,'Hydrogen') * 12000
             
             energy_total = energyCH4 + energyH2
-            
             
             # hydrogen mass has been added
             self.assertTrue(mass[-1][0] > 12e3 - 1 and mass[-1][0] < 12e3 + 1)

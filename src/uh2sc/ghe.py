@@ -108,6 +108,7 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
                 rr[1:],rr[:-1],dist_to_Tg_reservoir)]
 
         self.grid = rr
+        self._iter = 0
 
 
     def _Qfunc(self,Tgvec,idx):
@@ -199,7 +200,10 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
             Q[0] = x[gind[0]]
             Tgvec = x[gind[0]+1:gind[1]]
             Q[-1] = x[gind[1]]
-            
+        
+        if self._model.time > 100000 and self._iter == 0:
+            breakpoint()
+            self._iter +=1
 
         # set the interface condition equations
         # or boundary condition equations
@@ -207,7 +211,9 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
         if len(prev_comp) == 0:
             residuals[0] = Q[0] - self.bc["Q0"]
         else:
-            residuals[0] = Q[0] - self._q_axi_cavern
+            # convention heat leaving cavern is negative so we put + so that Q[0]
+            # will come out positive.
+            residuals[0] = Q[0] + self._q_axi_cavern
             
         next_comp = self.next_adjacent_components
         if len(next_comp) == 0:
@@ -263,29 +269,45 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
         cgind = cavern.global_indices
         t_cavern = xg[cgind[0]]
         t_cavern_wall = xg[cgind[0]+1]
+        m_brine = xg[cgind[0] + 2]
         t_brine = xg[cgind[0]+3]
         t_brine_wall = xg[cgind[0]+4]
         fluid = cavern._fluid
         water = cavern._water
         
         m_cavern = xg[cgind[1]-cavern._number_fluids+1:cgind[1]+1]
-        rho_cavern = m_cavern.sum() / cavern._vol_cavern
         
         
+        (p_cavern, 
+         rho_cavern, 
+         p_brine, 
+         rho_brine, 
+         vol_cavern,
+         mass_vapor,
+         rho_vapor,
+         h_vapor,
+         p_vapor,
+         h_evaporate) = calculate_cavern_pressure(fluid,
+                                      m_cavern,
+                                      t_cavern,
+                                      water,
+                                      m_brine,
+                                      t_brine,
+                                      cavern._VOL_TOTAL,
+                                      cavern._area_horizontal,
+                                      cavern._VOL_TOTAL - cavern._initial_volume_brine)
+        
+        vol_brine = cavern._VOL_TOTAL - vol_cavern                                              
         mass_frac = m_cavern / m_cavern.sum()
         fluid.set_mass_fractions(mass_frac)
-        
-        (p_brine, solubility_brine, rho_brine) = (
-            cavern._brine_average_pressure(fluid, water))
         
         water.update(CP.PT_INPUTS,p_brine,t_brine)
         
         
-        height_brine = cavern._height_brine
+        height_brine = vol_brine / cavern._area_horizontal
         height_cavern = cavern._height_total - height_brine
         height_total = cavern._height_total
         
-        p_cavern = calculate_cavern_pressure(fluid,rho_cavern,t_cavern)
         
         fluid.update(CP.PT_INPUTS,p_cavern,t_cavern)
         

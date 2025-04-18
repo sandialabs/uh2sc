@@ -58,7 +58,7 @@ class Constants:
     lbs_ft3_2_kg_m3 = 16.01846337396
     btu_p_hrftF_2_W_p_m_K = 1/0.578
     btu_p_lbF_2_J_p_kgK = 4186
-    tstep = seconds_per_hour/12 # 2.5 min time step
+    tstep = seconds_per_hour * 6 # 2.5 min time step
     scale_factor_between_kelvin_and_rankin = 1.8
     psi_to_Pa = 6894.75729
     nonleapyear = 2009
@@ -78,7 +78,7 @@ class Nielson2008CavernCase(object):
         con = Constants()
 
         inp = {}
-        subcat = ["vessel","initial","calculation","valve","heat_transfer","validation","reservoir"]
+        subcat = ["cavern","initial","calculation","heat_transfer","ghes","wells"]
         for cat in subcat:
             inp[cat] = {}
 
@@ -127,43 +127,39 @@ class Nielson2008CavernCase(object):
                                   + temp_increase_with_depth
                                   * (self.cavern_top_depth
                                      + self.cavern_height / 2))
-
+        
+        inp["initial"]["start_date"] = pd.date_range("1/1/2023",'1/1/2023',1)[0]
         # calculation inputs
         inp["calculation"]["time_step"] = con.tstep
-        inp["calculation"]["type"] = "energybalance"
+
 
         # give direct control without an input file
-        inp["vessel"]["length"] = self.cavern_height  #meters
-        inp["vessel"]["diameter"] = self.cavern_diameter # meters
-        inp["vessel"]["thickness"] = distance_to_insulated
-        inp["vessel"]["density"] = salt_density  #kg/m3
-        inp["vessel"]["heat_capacity"] = salt_specific_heat
-        inp["vessel"]["orientation"] = "vertical"
-
-
-        inp["valve"]["flow"] = "discharge"
-        inp["valve"]["back_pressure"] = 8e6 # does not affect the calculation as configured
-        inp["valve"]["type"] = "mdot"
-
-
+        inp["cavern"] = {}
+        inp["cavern"]["height"] = self.cavern_height  #meters
+        inp["cavern"]["diameter"] = self.cavern_diameter # meters
+        inp["ghes"] = {}
+        inp["ghes"]["nielson_ghe"] = {}
+        inp["ghes"]["nielson_ghe"]["modeled_radial_thickness"] = distance_to_insulated
+        inp["ghes"]["nielson_ghe"]["density"] = salt_density  #kg/m3
+        inp["ghes"]["nielson_ghe"]["heat_capacity"] = salt_specific_heat
+        inp["ghes"]["nielson_ghe"]["farfield_temperature"] = avg_ground_temperature
+        inp["ghes"]["nielson_ghe"]["thermal_conductivity"] = salt_thermal_conductivity
+        inp["ghes"]["nielson_ghe"]["number_element"] = 4 #axisym_elements_per_length * distance_to_insulated
+        inp["ghes"]["nielson_ghe"]["distance_to_farfield_temp"] = distance_to_ground_temp #m
+        
+        inp["wells"] = {}
+        inp["wells"]["cavern_well"] = {}
+        inp["wells"]["cavern_well"]["valves"] = {}
+        inp["wells"]["cavern_well"]["valves"]["inflow_mdot"] = {}
+        inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["reservoir"] = {}
+        inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["reservoir"]["pressure"] = 8e6 # does not affect the calculation as configured
+        inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["type"] = "mdot"
+        inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["reservoir"]["temperature"] = fahrenheit_to_kelvin(100)
+        
         # This input has to be tricked into coming from the ground model.
-        inp["heat_transfer"]["type"] = "salt_cavern"
-        inp["heat_transfer"]["temp_ambient"] = avg_ground_temperature
         inp["heat_transfer"]["h_inner"] = "calc"  # we need to Figure out what this should be
-        inp["heat_transfer"]["h_outer"] = 5  # NOT USED FOR SALT CAVERNS
+# %%
 
-        inp["reservoir"]["temperature"] = fahrenheit_to_kelvin(100)
-        #inp["reservoir"]["pressure"] = 1e6
-
-
-        # NOW SETUP INPUTS FOR THE CAVERN in a dictionary
-
-        inpc = {}
-
-        inpc["thermal_conductivity"] = salt_thermal_conductivity
-        inpc["number_element"] = 4 #axisym_elements_per_length * distance_to_insulated
-        inpc["distance_to_ground_temp"] = distance_to_ground_temp #m
-        inpc["start_date"] = pd.date_range("1/1/2023",'1/1/2023',1)[0]
 
 
         """
@@ -207,7 +203,7 @@ class Nielson2008CavernCase(object):
                             }
                        }
         self.inp = inp
-        self.inpc = inpc
+
 
 def cycle_flow_commands(sc):
     new_inp = sc.input
@@ -294,65 +290,69 @@ class TestSaltCavernVerification(unittest.TestCase):
                     # NEEDED.
                     #Prep inputs
 
-                    # # establish simulation time parameters
-                    # end_time = (1/3) * con.seconds_per_hour * con.hours_per_day * days_per_cycle
-                    # nstep = end_time / con.tstep
-                    # if np.floor(nstep) != nstep:
-                    #     raise ValueError("You must make the cavern_time_step"
-                    #                      +" an integer multiple of the tstep!")
-                    # else:
-                    #     nstep = int(nstep)
-                    # inp["calculation"]["end_time"] = end_time
+                    # establish simulation time parameters
+                    end_time = (1/3) * con.seconds_per_hour * con.hours_per_day * days_per_cycle
+                    nstep = end_time / con.tstep
+                    if np.floor(nstep) != nstep:
+                        raise ValueError("You must make the cavern_time_step"
+                                         +" an integer multiple of the tstep!")
+                    else:
+                        nstep = int(nstep)
+                    inp["calculation"]["end_time"] = end_time
 
                     # read verification dataset from Nielson
                     filename = subd['file'][days_per_cycle]
                     verify_obj = prepare_csv_data(con.nonleapyear,os.path.join(
                         os.path.dirname(__file__),"test_data",filename))
 
-                    # temp_max_pressure = fahrenheit_to_kelvin(verify_obj["degrees fahrenheit"].max())
-                    # temp_min_pressure = fahrenheit_to_kelvin(verify_obj["degrees fahrenheit"].min())
+                    temp_max_pressure = fahrenheit_to_kelvin(verify_obj["degrees fahrenheit"].max())
+                    temp_min_pressure = fahrenheit_to_kelvin(verify_obj["degrees fahrenheit"].min())
 
-                    # rho_max_pressure = PropsSI('D','T',temp_max_pressure,
-                    #                            'P',self.nielson_obj.max_avg_pressure,gas_type)
-                    # rho_min_pressure = PropsSI('D','T',temp_min_pressure,
-                    #                            'P',self.nielson_obj.min_avg_pressure,gas_type)
+                    rho_max_pressure = PropsSI('D','T',temp_max_pressure,
+                                               'P',self.nielson_obj.max_avg_pressure,gas_type)
+                    rho_min_pressure = PropsSI('D','T',temp_min_pressure,
+                                               'P',self.nielson_obj.min_avg_pressure,gas_type)
 
-                    # mass_max = rho_max_pressure * self.nielson_obj.cavern_volume
-                    # mass_min = rho_min_pressure * self.nielson_obj.cavern_volume
+                    mass_max = rho_max_pressure * self.nielson_obj.cavern_volume
+                    mass_min = rho_min_pressure * self.nielson_obj.cavern_volume
                     
-                    # breakpoint()
+
                     # # HERE IS WHERE I LEFT OFF. THIS routine is specifying mass flow in
                     # # in a way that should probably just be put in the input file
                     # # We want to move away from a lot of custom stuff happening 
                     # # here and to have correct values in the actual input file
 
                     # # calculate mass flow needed.
-                    # mdot = -(mass_max - mass_min) / (end_time)
-                    # # 30e6 Pa is approximately 1000 m deep overburden pressure
-                    # inp["initial"]["pressure"] = self.nielson_obj.max_avg_pressure
-                    # inp["initial"]["fluid"] = gas_type
-                    # inp['initial']['temperature'] = subd['initial_temperatures'][days_per_cycle]
+                    mdot = -(mass_max - mass_min) / (end_time)
+                    # 30e6 Pa is approximately 1000 m deep overburden pressure
+                    inp["initial"]["pressure"] = self.nielson_obj.max_avg_pressure
+                    inp["initial"]["fluid"] = gas_type
+                    inp['initial']['temperature'] = subd['initial_temperatures'][days_per_cycle]
 
-                    # # this just takes single steps
-                    # inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["time"] = [
-                    #     con.tstep*idx for idx in range(nstep+1)]
-                    # inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["mdot"] = [
-                    #     mdot for idx in range(nstep+1)]
+                    # this just takes single steps
+                    inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["time"] = [
+                        con.tstep*idx for idx in range(nstep+1)]
+                    inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["mdot"] = [
+                        mdot for idx in range(nstep+1)]
 
                     # create model object
-                    model = Model(inp)
-
+                    inp["calculation"]["end_time"] = 360000
+                    model = Model(inp,solver_options={"TOL":1.0e-1})
+                    model.components['cavern'].troubleshooting = True
                     # create salt caver object
                     # sc = SaltCavern(inp)
                     # """
                     # RUN
                     # """
-
                     for i in range(int(con.days_per_year/days_per_cycle)):
+                        
                         if self.print_msg:
                             print(i)
                         
+                        model.hit_it = False
                         model.run()
+                        breakpoint()
+                        model.plot_solution(model.xg_descriptions)
                         cycle_flow_commands(model)
 
                         model.run()

@@ -262,13 +262,15 @@ class Model(AbstractComponent):
             
             ax.plot(values[:,0],values[:,1],label=variable_str)
             ax.grid("on")
-            ax.set_xlabel = "time (s)"
-            ax.set_ylabel = variable_str
-            plt.show()
+            ax.set_xlabel("time (s)")
+            ax.set_ylabel(variable_str)
+            
             
             axd[variable_str] = ax
             figd[variable_str] = fig
         
+            plt.show()
+            
         return figd, axd
         
         pass    
@@ -510,7 +512,7 @@ class Model(AbstractComponent):
 
         #pure water for brine calculations
         water = CP.AbstractState("HEOS","Water")
-        water.update(CP.PT_INPUTS,self.inputs['initial']['pressure'],self.inputs['initial']['temperature'])
+        water.update(CP.PT_INPUTS,self.inputs['initial']['pressure'],self.inputs['initial']['liquid_temperature'])
         water.set_mole_fractions([1.0])
         self.water = water
         
@@ -523,8 +525,14 @@ class Model(AbstractComponent):
         height_total = self.inputs["cavern"]["height"]
         height_brine = self.inputs['initial']['liquid_height']
         t_brine = self.inputs['initial']['liquid_temperature']
+        
+        # repeat this to reach the correct brine density and pressure.
         (p_brine, solubility_brine,
          rho_brine) = brine_average_pressure(self.fluids['cavern'],water,height_total,height_brine,t_brine)
+        water.update(CP.PT_INPUTS,p_brine,t_brine)
+        (p_brine, solubility_brine,
+         rho_brine) = brine_average_pressure(self.fluids['cavern'],water,height_total,height_brine,t_brine)
+        
         vol_cavern = (height_total - height_brine) * area_horizontal
         m_cavern = vol_cavern * self.fluids['cavern'].rhomass()
         

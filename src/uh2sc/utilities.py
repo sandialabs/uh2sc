@@ -10,6 +10,8 @@ from warnings import warn
 import re
 
 import numpy as np
+from scipy.optimize import fsolve
+
 
 from CoolProp import CoolProp as CP
 
@@ -20,6 +22,7 @@ from uh2sc.constants import Constants
 from uh2sc.thermodynamics import (solubility_of_nacl_in_h2o, 
                                   brine_saturated_pressure, 
                                   density_of_brine_water)
+
 
 const = Constants()
 
@@ -152,6 +155,14 @@ def _is_valid_matstr(matstr):
         exceptions.append(top_exception)
         
         raise ValueError(*exceptions)
+
+def create_CP_gas_string(fluid):
+    names = fluid.fluid_names()
+    mol_fractions = fluid.get_mole_fractions()
+    
+    return "HEOS::" + "&".join([name +f"[{molefrac}]" for 
+                     molefrac, name in zip(mol_fractions, names)])
+
 
 def process_CP_gas_string(matstr):
     """
@@ -361,30 +372,128 @@ def _construct_ordered_fluid_str(fluid_components,fluid_mapping,names=None):
                 
             fluid_str += f"{prestr}{pure_fluid}[{molfrac:.8e}]"
         return fluid_str
+
+def brine_average_pressure(fluid,water,height_total,height_brine,rho_g=None,pres_g=None):
+    """
+    Approximate the average pressure for the brine
     
-    
-def calculate_cavern_pressure(fluid,rho_cavern,t_cavern,tol=1e-6, max_iter=100):
-        # P = n * rho * R * T
-          
-        ideal_pressure = fluid.gas_constant()/fluid.molar_mass() * rho_cavern * t_cavern
-        
-        pressure = ideal_pressure
-        pressure0 = 0
-        _iter = 0
-        
-        while (np.abs((pressure - pressure0)/pressure) > tol) and _iter < max_iter:
-            pressure0 = pressure
-            fluid.update(CP.PT_INPUTS,pressure0,t_cavern)
-        
-            Z = fluid.compressibility_factor()
-        
-            pressure = Z * fluid.gas_constant()/fluid.molar_mass() * rho_cavern * t_cavern
-            _iter += 1
+    """
+    t_brine = water.T()
+    # TODO: create a test for this!
+    if rho_g is None:
+        rho_g = fluid.rhomass()
+    if pres_g is None:
+        pres_g = fluid.p()
+
+    # assume density is constant
+    height_gas_o_2 = (height_total - height_brine)/2
+    pres_g_surf = pres_g + rho_g * const.g['value'] * height_gas_o_2
+    rho_pure_water = water.rhomass()
+    height_brine_o_2 = height_brine / 2
+    solubility_brine = solubility_of_nacl_in_h2o(t_brine)
+    rho_brine = density_of_brine_water(t_brine, pres_g_surf, solubility_brine, rho_pure_water)
             
-        if _iter == max_iter:
-            raise ValueError("No convergence on pressure calculation!")
+    return (pres_g_surf + height_brine_o_2 * const.g['value'] * rho_brine,
+           solubility_brine,
+           rho_brine)
+
+
+
     
-        return pressure
+def evaporation_energy(water, 
+                        t_cavern, 
+                        t_brine, 
+                        vol_cavern):
+    # find vapor mass change due to condensation (and settling to the brine)
+    # or evaporation
+    restore_p_brine = water.p()
+    restore_t_brine = water.T()
+    
+    # get density of saturated vapor at the temperature and saturated 
+    # vapor pressure
+    water.update(CP.QT_INPUTS,1.0,t_cavern)
+    rho_vapor = water.rhomass()
+    p_vapor = water.p()
+    
+    # get the heat of vaporization at the average temperature during the time 
+    # step
+    water.update(CP.QT_INPUTS,0.0,t_cavern)
+    h_vapor_0 = water.hmass()
+    water.update(CP.QT_INPUTS,1.0,t_cavern)
+    h_vapor_1 = water.hmass()
+    h_evaporate = h_vapor_1 - h_vapor_0
+    
+    # restore the water CoolProp fluids to their original state.
+    water.update(CP.PT_INPUTS,restore_p_brine, restore_t_brine)
+
+    mass_vapor = rho_vapor * vol_cavern
+
+    
+    return (mass_vapor, rho_vapor, h_vapor_1, p_vapor, h_evaporate)
+    
+def calculate_cavern_pressure(fluid,
+                              m_cavern,
+                              t_cavern,
+                              water,
+                              m_brine,
+                              t_brine,
+                              volume_total,
+                              area,
+                              volume_cavern_estimate):
+
+        
+        def conservation_of_volume(vol_cavern, return_vapor_variables=False):
+            
+            volume_liquid_brine = volume_total - vol_cavern
+            height_brine = volume_liquid_brine / area
+            height_cavern = vol_cavern / area
+            height_total = volume_total / area
+            
+            (mass_vapor, rho_vapor, h_vapor_1, p_vapor, h_evaporate) = (
+                evaporation_energy(water, 
+                                   t_cavern, 
+                                   t_brine, 
+                                   vol_cavern))
+            
+            
+            rho_gas_no_vapor = m_cavern.sum() / vol_cavern
+            rho_brine = m_brine / volume_liquid_brine
+
+            pressure_gas = CP.PropsSI('P','D',rho_gas_no_vapor,
+                                      'T', t_cavern,create_CP_gas_string(fluid))
+            
+                                                           
+            (pressure_brine,
+             solubility_brine,
+             rho_brine_with_salt) = brine_average_pressure(fluid,water,
+                                                           height_total,
+                                                           height_brine,
+                                                           t_brine)
+            try:
+                fluid.update(CP.PT_INPUTS, pressure_gas, t_cavern)
+                water.update(CP.PT_INPUTS, pressure_brine, t_brine)
+            except:
+                breakpoint()
+            
+            if return_vapor_variables:
+                return mass_vapor, rho_vapor, h_vapor_1, p_vapor, h_evaporate
+                        
+            else:
+                return water.rhomass() - rho_brine
+            
+        volume_cavern = fsolve(conservation_of_volume, volume_cavern_estimate)
+        
+        pressure_gas_novapor = fluid.p()
+        rho_gas_novapor = fluid.rhomass()
+        pressure_brine = water.p()
+        rho_brine = water.rhomass()
+    
+        (mass_vapor, rho_vapor, h_vapor_1, 
+         p_vapor, h_evaporate) = conservation_of_volume(volume_cavern,True)
+        
+        return (pressure_gas_novapor, rho_gas_novapor, pressure_brine, 
+                rho_brine, volume_cavern, mass_vapor, rho_vapor, 
+                h_vapor_1, p_vapor, h_evaporate)
     
 def calculate_component_masses(fluid,mass):
     return np.array(fluid.get_mass_fractions()) * mass
