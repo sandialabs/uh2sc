@@ -469,18 +469,16 @@ def calculate_cavern_pressure(fluid,
                                                            height_total,
                                                            height_brine,
                                                            t_brine)
-            try:
-                fluid.update(CP.PT_INPUTS, pressure_gas, t_cavern)
-                water.update(CP.PT_INPUTS, pressure_brine, t_brine)
-            except:
-                breakpoint()
+
+            fluid.update(CP.PT_INPUTS, pressure_gas, t_cavern)
+            water.update(CP.PT_INPUTS, pressure_brine, t_brine)
             
             if return_vapor_variables:
                 return mass_vapor, rho_vapor, h_vapor_1, p_vapor, h_evaporate
                         
             else:
                 return water.rhomass() - rho_brine
-            
+
         volume_cavern = fsolve(conservation_of_volume, volume_cavern_estimate)
         
         pressure_gas_novapor = fluid.p()

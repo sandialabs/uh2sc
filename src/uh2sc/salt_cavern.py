@@ -161,7 +161,6 @@ class SaltCavern(AbstractComponent):
         
         # time and indices
         self._time = 0
-        self._dt = input_dict['calculation']['time_step']
         self._first_step = True
         self._step_num = 0.0
         self._gindices = global_indices
@@ -217,7 +216,7 @@ class SaltCavern(AbstractComponent):
         
         
         # solution
-        self._NUM_EQN = self._number_fluids + 5 # see get_x for the 5 first variables.
+        self._NUM_EQN = self._number_fluids + 4 # see get_x for the 5 first variables.
 
 
         self._model = model
@@ -231,7 +230,9 @@ class SaltCavern(AbstractComponent):
                          "_t_brine":"Brine temperature (K)",
                          "_p_brine":"Brine pressure",
                          "_t_brine_wall":"Brine wall temperature",
-                         "time":"Time (sec)"}
+                         "time":"Time (sec)",
+                         "e_brine":"Brine energy (J)",
+                         "e_cavern":"Cavern energy (J)"}
         
         self._residual_iter = 0
         self.results = {}
@@ -301,7 +302,7 @@ class SaltCavern(AbstractComponent):
         _eqn = 0
         
         # time step
-        dt = self._dt
+        dt = self._model.time_step
         
         #-----------------
         # INDEPENDENT VARIABLES 
@@ -315,8 +316,8 @@ class SaltCavern(AbstractComponent):
         #t_cavern_wall_m1 = self._t_cavern_wall_m1
         t_brine = self._t_brine
         t_brine_m1 = self._t_brine_m1
-        t_brine_wall = self._t_brine_wall
-        #t_brine_wall_m1 = self._t_brine_wall_m1
+
+
         m_cavern = self._m_cavern     #mass of dry gasses in the cavern (excluding water vapor)
         m_cavern_m1 = self._m_cavern_m1 
         m_brine = self._m_brine
@@ -376,16 +377,7 @@ class SaltCavern(AbstractComponent):
 
         mass_change_vapor = mass_vapor - mass_vapor_m1
         avg_h_evap = (h_evaporate + h_evaporate_m1)/2                                             
-                                                     
-        if mass_change_vapor > 0.0:
-            e_vapor_brine = -avg_h_evap * mass_change_vapor
-            e_vapor_cavern = 0.0
-        else:
-            e_vapor_brine = 0.0
-            # comes out positive since mass_change_vapor is negative
-            e_vapor_cavern = -avg_h_evap * mass_change_vapor   
-        
-                                                   
+    
         volume_liquid_brine = m_brine/rho_brine
         volume_liquid_brine_m1 = m_brine_m1/rho_brine_m1
         
@@ -400,6 +392,17 @@ class SaltCavern(AbstractComponent):
         height_cavern = vol_cavern / self._area_horizontal
         height_brine = volume_liquid_brine / self._area_horizontal
         diameter_cavern = self._diameter
+        
+        # evaporization/condensation respiration
+        e_vapor = -avg_h_evap * mass_change_vapor # 
+        # if mass change vapor > 0 then we are evaporaing which gives negative heat                           
+        e_vapor_brine = 0.0 # e_vapor * height_brine / height_total
+        e_vapor_cavern = e_vapor
+ 
+            
+        if self._model.converged_solution_point:
+            print(f"E vapor brine: {e_vapor_brine}, E vapor cavern: {e_vapor_cavern}")
+        
         
         rho_brine_updated = (m_brine-mass_vapor)/volume_liquid_brine
         rho_brine_m1_updated = (m_brine_m1 - mass_vapor_m1)/volume_liquid_brine_m1
@@ -441,17 +444,20 @@ class SaltCavern(AbstractComponent):
                                                                          rho_vapor,
                                                                          rho_cavern_novapor,
                                                                          h_vapor)
-                                                                         
+                                                          
         
         
-        q_axi_total, q_axi_brine, q_axi_cavern = self._axisymmetric_heat_flux(
-            t_cavern_wall,t_brine_wall,height_cavern)
+        #q_axi_total, q_axi_brine, q_axi_cavern = self._axisymmetric_heat_flux(
+        #    t_cavern_wall,t_brine_wall,height_cavern)
     
     
         q_cavern_wall, q_brine_wall = self.cavern_wall_heat_flux(t_cavern,
-                                  t_cavern_wall,t_brine,t_brine_wall,
+                                  t_cavern_wall,t_brine,
                                   fluid,water,height_cavern,height_brine,
                                   height_total)
+        
+        q_cavern_brine = 100 * self._area_horizontal * (t_cavern - t_brine)
+        #q_cavern_brine =0
         
         # RADIATION ENERGY TRANSFER FROM BRINE TO CAVERN WALLS
         f12 = self._radiation_vf(diameter_cavern,height_cavern)
@@ -465,7 +471,16 @@ class SaltCavern(AbstractComponent):
         # WATER CANNOT BE ADDED BUT IT CAN BE EXTRACTED! 
         brine_mass_energy_flow = cavern_vapor_energy_flow
         
+        # Expansion/Compression term
+        drhodt = cavern_gas_mass_flow.sum() / vol_cavern
+        dPdT = rho_cavern_novapor * fluid.compressibility_factor() * fluid.gas_constant()/fluid.molar_mass()
         
+        #dPdT = CP.PropsSI("d(P)/d(T)|Cpmass",'P',p_cavern_novapor,'T',t_cavern,"Hydrogen")
+        
+        vt_o_d = vol_cavern * t_cavern / rho_cavern_novapor
+        #vt_o_d = 0.0
+        
+        expansion_term = vt_o_d * dPdT * drhodt
         
         if get_independent_vars:
             
@@ -486,7 +501,8 @@ class SaltCavern(AbstractComponent):
                     else:
                         varlist.append(time)
     
-                                                                         
+            # if self._model.time > 1000:
+            #     breakpoint()
                                                                          
             # PUT ANY VARIABLES YOU WANT TO WRAP INTO shift_solution, or
             # into results timeseries here!
@@ -495,8 +511,10 @@ class SaltCavern(AbstractComponent):
                     vol_cavern,
                     volume_liquid_brine,
                     p_brine,
-                    cavern_vapor_mass_flow
-                    )
+                    cavern_vapor_mass_flow,
+                    p_cavern_novapor + p_vapor,
+                    e_brine,
+                    e_cavern)
             
         
         
@@ -525,8 +543,9 @@ class SaltCavern(AbstractComponent):
         # stack ground heat exchangers (to capture temperature gradient), then you 
         # need to update this.
         
-        residuals[_eqn] = -q_cavern_wall - q_brine_wall + q_axi_total
-        _eqn += 1
+        # THIS IS ENFORCED ON THE OTHER SIDE!!!!!!
+        #residuals[_eqn] = -q_cavern_wall - q_brine_wall + q_axi_total
+        #_eqn += 1
         
         # ----  GHE temperature ---- #
         # The weighted average of the cavern and brine wall temperatures is equal to the GHE wall temperature
@@ -538,49 +557,49 @@ class SaltCavern(AbstractComponent):
             residuals[_eqn] = q_cavern_wall - q_axi_cavern
             _eqn += 1
         else:
-            for t_axisym in self._t_axisym:
-                residuals[_eqn] = (((t_cavern_wall 
-                                    * (height_cavern - del_height_brine * 0.5) 
-                                    + t_brine_wall 
-                                    * (height_brine + del_height_brine * 0.5))
-                                    /height_total) 
-                                    - t_axisym)
+            residuals[_eqn] = t_cavern_wall-self._t_axisym[0]
+            # for t_axisym in self._t_axisym:
+            #     residuals[_eqn] = (((t_cavern_wall 
+            #                         * (height_cavern - del_height_brine * 0.5) 
+            #                         + t_brine_wall 
+            #                         * (height_brine + del_height_brine * 0.5))
+            #                         /height_total) 
+            #                         - t_axisym)
             _eqn += 1
     
         ### -----   CAVERN ENERGY    ----  ###
         #cavern
-    
-        residuals[_eqn] = (dt 
+        
+        residuals[_eqn] = ((dt 
                            * (cavern_mass_energy_flow 
                            + q_cavern_wall
-                           - q_rad) 
+                           - q_rad
+                           - q_cavern_brine
+                           + vt_o_d * drhodt * dPdT))     # expansion term) 
                            + e_vapor_cavern
-                           - e_cavern.sum()
-                           + e_cavern_m1.sum())
+                           - (e_cavern.sum()
+                           - e_cavern_m1.sum()))
         
         _eqn += 1   
                                          
         ### ----  BRINE ENERGY ---- ###
-        
+
         # if self._model.time > 400000:
         #     if mass_change_vapor != 0:
         #         breakpoint()
         #         self._model.hit_it = True
-    
-                
-        
-        
         residuals[_eqn] = (dt 
                           * (brine_mass_energy_flow 
                           + q_brine_wall
-                          + q_rad) 
-                          + e_vapor_brine
+                          + q_rad 
+                          + q_cavern_brine
+                          + e_vapor_brine)
                           - e_brine
                           + e_brine_m1)
-        if hasattr(self,"troubleshooting"):
-            plt.bar(height=np.array([dt*brine_mass_energy_flow,q_brine_wall*dt,
-                                     q_rad*dt,e_vapor_brine,e_brine_m1-e_brine]),
-                     x=['mass e','q_brine_wall','q_rad','e_vapor','del_e_brine'])
+        # if hasattr(self,"troubleshooting"):
+        #     plt.bar(height=np.array([dt*brine_mass_energy_flow,q_brine_wall*dt,
+        #                              q_rad*dt,e_vapor_brine,e_brine_m1-e_brine]),
+        #              x=['mass e','q_brine_wall','q_rad','e_vapor','del_e_brine'])
         
         _eqn += 1
     
@@ -684,6 +703,11 @@ class SaltCavern(AbstractComponent):
         e_list += ["Brine energy balance"]
         e_list += ["Brine mass balance"]
         
+        if len(e_list) > self._NUM_EQN:
+            raise ValueError("Developer Error, the number of equation "
+                             +"descriptions must be equal to the number of "
+                             +"equations!")
+        
         return e_list
             
 
@@ -696,7 +720,6 @@ class SaltCavern(AbstractComponent):
                          [self._t_cavern_wall] +
                          [self._m_brine] +
                          [self._t_brine] +
-                         [self._t_brine_wall] +
                          list(self._m_cavern)])
     
     
@@ -706,26 +729,30 @@ class SaltCavern(AbstractComponent):
         self._t_cavern_wall_m1 = self._t_cavern_wall
         self._m_brine_m1 = self._m_brine
         self._t_brine_m1 = self._t_brine
-        self._t_brine_wall_m1 = self._t_brine_wall
+#        self._t_brine_wall_m1 = self._t_brine_wall
         self._m_cavern_m1 = self._m_cavern
         
         (del_vol_brine,mass_vapor,
                 vol_cavern,
                 vol_brine,
                 p_brine,
-                cavern_vapor_mass_flow) = self.evaluate_residuals(get_independent_vars=True)
+                cavern_vapor_mass_flow,
+                p_cavern,
+                e_brine,
+                e_cavern) = self.evaluate_residuals(get_independent_vars=True)
         
         # shift the composition of the gas fluid
-        # calculate 
         total_mass = self._m_cavern.sum()
         self._fluid_m1.set_mass_fractions(self._m_cavern/total_mass)
         rho_cavern = total_mass / self._vol_cavern
-        p_cavern = calculate_cavern_pressure(self._fluid_m1, rho_cavern, self._t_cavern)
-        self._p_cavern_m1 = self._fluid.p()
+
+        self._p_cavern_m1 = p_cavern
         self._water_m1.update(CP.PT_INPUTS,p_brine,self._t_brine)
         
         self._vol_cavern_m1 = self._VOL_TOTAL - vol_brine - del_vol_brine
         self._vol_brine_m1 = self._VOL_TOTAL - self._vol_cavern_m1
+        self._e_cavern = e_cavern
+        self._e_brine = e_brine
         
 
 
@@ -742,8 +769,8 @@ class SaltCavern(AbstractComponent):
         self._t_cavern_wall = xloc[1]
         self._m_brine = xloc[2]
         self._t_brine = xloc[3]
-        self._t_brine_wall = xloc[4]
-        self._m_cavern = np.array([mass for mass in xloc[5:5+self._number_fluids]])
+        #self._t_brine_wall = xloc[4]
+        self._m_cavern = np.array([mass for mass in xloc[4:4+self._number_fluids]])
         
         # see model._build_ghes for the variable structure of each 
         # axisymmetric ground heat exchanger.
@@ -799,14 +826,14 @@ class SaltCavern(AbstractComponent):
                                               +"salt caverns currently!")
                 
                 
-    def cavern_wall_heat_flux(self,t_cavern,t_cavern_wall,t_brine,t_brine_wall,
+    def cavern_wall_heat_flux(self,t_cavern,t_cavern_wall,t_brine,
                               fluid,water,height_cavern,height_brine,height_total):
         ht_coef_wall = self._wall_ht_coef(height_cavern,fluid,t_cavern,t_cavern_wall,self._p_cavern)
         # TODO, you are just using water, you need it to be brine! maybe you should
         # write a class that inherits from the CoolProp Abstract state but incorporates
         # the brine properties when needed.
         #breakpoint()
-        ht_coef_brine_wall = self._wall_ht_coef(height_brine,water,t_brine,t_brine_wall,self._p_brine)
+        ht_coef_brine_wall = self._wall_ht_coef(height_brine,water,t_brine,t_cavern_wall,self._p_brine)
 
         # same as above
         q_cavern_wall = ((self._area_horizontal + self._area_vertical * 
@@ -818,7 +845,7 @@ class SaltCavern(AbstractComponent):
         q_brine_wall = ((self._area_horizontal + self._area_vertical * 
                                height_brine / height_total)
                                * ht_coef_brine_wall
-                               * (t_brine_wall - t_brine))
+                               * (t_cavern_wall - t_brine))
         
         return q_cavern_wall, q_brine_wall
     
@@ -915,17 +942,24 @@ class SaltCavern(AbstractComponent):
                 for vname, v_mdot in well_mdot.items():
                     
                     wfluid = self._model.fluids[wname][vname]
-                    cavern_gas_mass_flow += v_mdot * gas_mass_fraction
-                    cavern_vapor_mass_flow += v_mdot.sum() * water_vapor_mass_fraction 
+                    
+                    if v_mdot.sum() > 0:
+                        cavern_gas_mass_flow += v_mdot
+                        cavern_vapor_mass_flow = 0.0
+                    else:
+                        cavern_gas_mass_flow += v_mdot * gas_mass_fraction
+                        cavern_vapor_mass_flow += v_mdot.sum() * water_vapor_mass_fraction 
+                        
                     wfluid.update(CP.PT_INPUTS,
                                  self._wells_pres[wname][vname],
                                  self._wells_temp[wname][vname])
-                    if v_mdot.sum() < 0.0:
-                        hmass_flow = hmass
+                    
+                    if v_mdot.sum() > 0.0:
+                        cavern_mass_energy_flow += v_mdot.sum() * wfluid.hmass()
+                        cavern_vapor_energy_flow += 0.0   #TODO - allow water vapor below saturation pressure to be present.
                     else:
-                        hmass_flow = wfluid.hmass()
-                    cavern_mass_energy_flow += v_mdot.sum() * gas_mass_fraction * hmass_flow
-                    cavern_vapor_energy_flow += v_mdot.sum() * water_vapor_mass_fraction * h_vapor
+                        cavern_mass_energy_flow += v_mdot.sum() * gas_mass_fraction * hmass
+                        cavern_vapor_energy_flow += v_mdot.sum() * water_vapor_mass_fraction * h_vapor
                     
         return (cavern_gas_mass_flow, cavern_mass_energy_flow, 
                 cavern_vapor_mass_flow, cavern_vapor_energy_flow)

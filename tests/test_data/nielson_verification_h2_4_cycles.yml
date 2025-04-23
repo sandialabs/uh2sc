@@ -37,7 +37,7 @@ ghes:
     initial_conditions:
       Q0: 0.0
       Qend: 0.0
-    number_elements: 50
+    number_elements: 100
 initial:  #
   temperature: 326.5
   pressure: 9000000.0 #Pascal

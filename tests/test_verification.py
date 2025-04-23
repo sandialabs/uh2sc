@@ -10,6 +10,7 @@ This test takes ~250 s to execute and is longer than all of the rest.
 import os
 from datetime import datetime, timedelta
 import unittest
+from copy import deepcopy
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -158,7 +159,6 @@ class Nielson2008CavernCase(object):
         
         # This input has to be tricked into coming from the ground model.
         inp["heat_transfer"]["h_inner"] = "calc"  # we need to Figure out what this should be
-# %%
 
 
 
@@ -205,13 +205,18 @@ class Nielson2008CavernCase(object):
         self.inp = inp
 
 
-def cycle_flow_commands(sc):
-    new_inp = sc.input
+def cycle_flow_commands(model):
+
+    inp = model.inputs
+    new_inp = deepcopy(inp)
+    
+    model_time = model.time
+
     cur_time = new_inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["time"]
     tstep = cur_time[1] - cur_time[0]
     cur_mdot = new_inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["mdot"][0]
     nstep = len(cur_time)
-
+    
 
     if cur_mdot <= 0.0:
 
@@ -233,8 +238,7 @@ def cycle_flow_commands(sc):
     new_inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["mdot"] = [
         new_mdot for idx in range(new_nstep+1)]
 
-    sc.input = new_inp
-    sc.validate_input()
+    return new_inp
 
 
 class TestSaltCavernVerification(unittest.TestCase):
@@ -292,13 +296,13 @@ class TestSaltCavernVerification(unittest.TestCase):
 
                     # establish simulation time parameters
                     end_time = (1/3) * con.seconds_per_hour * con.hours_per_day * days_per_cycle
-                    nstep = end_time / con.tstep
-                    if np.floor(nstep) != nstep:
-                        raise ValueError("You must make the cavern_time_step"
-                                         +" an integer multiple of the tstep!")
-                    else:
-                        nstep = int(nstep)
-                    inp["calculation"]["end_time"] = end_time
+                    #nstep = end_time / con.tstep
+                    # if np.floor(nstep) != nstep:
+                    #     raise ValueError("You must make the cavern_time_step"
+                    #                      +" an integer multiple of the tstep!")
+                    # else:
+                    #     nstep = int(nstep)
+                    # inp["calculation"]["end_time"] = end_time
 
                     # read verification dataset from Nielson
                     filename = subd['file'][days_per_cycle]
@@ -330,35 +334,38 @@ class TestSaltCavernVerification(unittest.TestCase):
                     inp['initial']['temperature'] = subd['initial_temperatures'][days_per_cycle]
 
                     # this just takes single steps
-                    inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["time"] = [
-                        con.tstep*idx for idx in range(nstep+1)]
-                    inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["mdot"] = [
-                        mdot for idx in range(nstep+1)]
+                    #inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["time"] = [
+                    #    con.tstep*idx for idx in range(nstep+1)]
+                    #inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["mdot"] = [
+                    #    mdot for idx in range(nstep+1)]
 
                     # create model object
-                    inp["calculation"]["end_time"] = 360000
-                    model = Model(inp,solver_options={"TOL":1.0e-1})
+                    #inp["calculation"]["end_time"] = 2592000
+                    #inp["calculation"]["time_step"] = 86400
+                    model = Model(inp,solver_options={"TOL":1.0e-2})
                     model.components['cavern'].troubleshooting = True
                     # create salt caver object
                     # sc = SaltCavern(inp)
                     # """
                     # RUN
                     # """
-                    for i in range(int(con.days_per_year/days_per_cycle)):
                         
-                        if self.print_msg:
-                            print(i)
-                        
-                        model.hit_it = False
+                    #model.hit_it = False
+                    try:
                         model.run()
+                    except:
                         breakpoint()
-                        model.plot_solution(model.xg_descriptions)
-                        cycle_flow_commands(model)
 
-                        model.run()
-                        cycle_flow_commands(model)
+                    
+                    
+                    cav_res = model.components['cavern'].results
+                    
+                    plt.plot(cav_res['Time (sec)'],cav_res['Cavern energy (J)'],cav_res['Time (sec)'],cav_res['Brine energy (J)'])
 
-                    sc = model.components["salt_cavern"]
+                    model.plot_solution(model.xg_descriptions)
+
+                    breakpoint()
+                    sc = model.components["cavern"]
                     v_df = create_df_from_sim_output(con.nonleapyear, sc.cavern_results)
 
                     s_kelvin = fahrenheit_to_kelvin(verify_obj['degrees fahrenheit'])

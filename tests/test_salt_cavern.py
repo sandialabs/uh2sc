@@ -11,6 +11,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from uh2sc.model import Model, ADJ_COMP_TESTING_NAME
 from CoolProp import CoolProp as CP
+from uh2sc.utilities import evaporation_energy
 
 
 def initialize_model(mixture=False):
@@ -110,14 +111,21 @@ class TestSaltCavern(unittest.TestCase):
             cavern = model.components['cavern']
             
             # 100 % vaporization
-            (mass_vapor, mass_change_vapor, rho_vapor, e_vapor_brine, e_vapor_cavern, h_vapor) = (
-                cavern._evaporation_energy(water, water_m1, 
-                374.15, 372.15, 374.15, 372.15, 1.0, 1.0))
+            #(mass_vapor, mass_change_vapor, rho_vapor, e_vapor_brine, e_vapor_cavern, h_vapor) 
+            mass_vapor, rho_vapor, h_vapor_1, p_vapor, h_evaporate= (
+                evaporation_energy(water, 
+                                   t_cavern=374.15, 
+                                   t_brine=372.15, 
+                                   vol_cavern=1))
+                    
+                    
+                #    water, water_m1, 
+                #374.15, 372.15, 374.15, 372.15, 1.0, 1.0))
             
             self.assertTrue(mass_vapor > 0.6 and mass_vapor < 0.62)
-            self.assertTrue(mass_change_vapor < 0.041 and mass_change_vapor > 0.039)
-            self.assertTrue(np.abs(e_vapor_brine) > 90100 and
-                            np.abs(e_vapor_brine) < 90200)
+#            self.assertTrue(mass_change_vapor < 0.041 and mass_change_vapor > 0.039)
+#            self.assertTrue(np.abs(e_vapor_brine) > 90100 and
+#                            np.abs(e_vapor_brine) < 90200)
     
     
     def test_H2_salt_cavern(self):

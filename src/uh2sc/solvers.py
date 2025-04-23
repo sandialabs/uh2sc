@@ -315,8 +315,9 @@ class NewtonSolver(object):
                 use_r_ = True
                 for iter_bt in range(self.bt_maxiter):
                     x_ = x + alpha * d
-                    model.load_var_values_from_x(x_)
+                    
                     try:
+                        model.load_var_values_from_x(x_)
                         r_ = model.evaluate_residuals()
                     except:
                         alpha = alpha * self.rho

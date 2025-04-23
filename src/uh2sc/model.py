@@ -62,7 +62,7 @@ class Model(AbstractComponent):
                             dict = dict that conforms to the uh2sc schema
 
         """
-
+        self.converged_solution_point = False
         self.inputs = self._read_input(inp)
         
         self.test_inputs = kwargs
@@ -101,11 +101,15 @@ class Model(AbstractComponent):
         self.solver = NewtonSolver(solver_options)
 
         time_step = self.inputs["calculation"]["time_step"]
+        
         nstep = int(self.inputs["calculation"]["end_time"]
                     / time_step
                     + 1)
-        # constant time steps
-        self.times = [idx * time_step for idx in range(nstep)]
+        self._end_time = self.inputs["calculation"]["end_time"]
+        self._max_time_step = time_step
+        self._min_time_step = 100
+        self.time = 0.0
+        self.time_step = self._max_time_step
         self._solutions = {}
     
     @property
@@ -116,29 +120,80 @@ class Model(AbstractComponent):
     def component_type(self):
         return "model"
 
-    def run(self):
-        for time in self.times:
-            if 'cavern' in self.components:
-                if hasattr(self.components['cavern'], "troubleshooting"):
-                    print(time)
-            self.time = time
-            
-            logging.info(f"UH2SC model beginning calculations for time={time}.")
+    def run(self,new_inp=None):
+        """
+        inputs:
+            new_inp : dict - an input object that, if present, resets 
+                      all of the inputs but does not reinitialize the
+                      model. This way, the model can be commanded to change 
+                      mass flows and such on the fly while maintaining the
+                      current state of the cavern.
+        
+        """
+        if new_inp is not None:
+            self.inputs = self._read_input(new_inp)
+            self._validate()
+            time_step = self.inputs["calculation"]["time_step"]
+
+            nstep = int(self.inputs["calculation"]["end_time"]
+
+                        / time_step
+                        + 1)
+            breakpoint()
+            for component_name, component in self.components.items():
+                if component.component_type == 'Well':
+                    new_well = Well(component_name,new_inp['wells'][component_name],self, component.global_indices)
+                    self.components[component_name] = new_well
+        
+        
+        while self.time <= self._end_time:
+            x_org = self.get_x()
+
+            logging.info(f"UH2SC model beginning calculations for time={self.time}.")
             # solve the current time step
+            
             tup = self.solver.solve(self)
             
             solver_converged = bool(tup[0])
             if solver_converged:
+                # shift the time
+                
+                
+                if 'cavern' in self.components:
+                    if hasattr(self.components['cavern'], "troubleshooting"):
+                        print(self.time)
+                
                 # update the state of the model
                 self.shift_solution()
-
+                
                 # gather the results
-                self._solutions[time] = deepcopy(self.get_x())
+                self._solutions[self.time] = deepcopy(self.get_x())
+                
+                self.time += self.time_step
+                
+                # increase the time step if it has shrunk
+                if self.time_step < self._max_time_step:
+                    proposed_time_step = 1.5 * self.time_step
+                    if proposed_time_step < self._max_time_step:
+                        self.time_step = proposed_time_step
+                    else:
+                        self.time_step = self._max_time_step
             
             else:
-                msg = tup[1]
-                raise NewtonSolverError("The Newton solver returned an" 
-                        +f" error for time {time}: {msg}")
+                if self.time_step > self._min_time_step:
+                    # try resetting and trying a smaller time step
+                    self.load_var_values_from_x(x_org)
+                    self.time_step = 0.5*self.time_step
+                    
+
+                    
+                else:
+                    breakpoint()
+                    msg = tup[1]
+                    raise NewtonSolverError("The Newton solver returned an" 
+                            +f" error for time {self.time} and the time step has"
+                            +" reached the minimum allowed value. The solver"
+                            +f" message is: {msg}")
 
 
     @property
@@ -541,7 +596,7 @@ class Model(AbstractComponent):
         x_desc += ["Cavern gas temperature (K)"]
         xg += [self.inputs["initial"]["temperature"]]
         
-        x_desc += ["Cavern gas wall temperature (K)"]
+        x_desc += ["Cavern wall temperature (K)"]
         xg += [self.inputs["initial"]["temperature"]]
         
         #x_desc += ["Cavern pressure at average height from cavern top to liquid surface (Pa)"]
@@ -553,8 +608,8 @@ class Model(AbstractComponent):
         x_desc += ["Brine temperature (K)"]
         xg += [self.inputs["initial"]["temperature"]]
         
-        x_desc += ["Brine wall temperature (K)"]
-        xg += [self.inputs["initial"]["temperature"]]
+        #x_desc += ["Brine wall temperature (K)"]
+        #xg += [self.inputs["initial"]["temperature"]]
         
         # mass balance for each gaseous fluid.
         mass_dict = calculate_component_masses(self.fluids['cavern'],

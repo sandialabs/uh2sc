@@ -48,10 +48,11 @@ reservoir:
   required: false
   schema:
     pressure:
-      max: 100000000.0
-      min: 0.0
+      check_with: valve_pressure_check
       required: true
-      type: number
+      type: 
+      - number
+      - string
     temperature:
       max: 500
       min: 0.0

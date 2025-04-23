@@ -30,7 +30,6 @@ def density_of_brine_water(temperature_K: float, pressure_Pa: float,
         if temperature_F < 0 or temperature_F > 400:
             raise ValueError("The valid temperature range is 0 to 400F")
         elif pressure_psi < 14 or pressure_psi > 1.0e4:
-            breakpoint()
             raise ValueError("The valid pressure range is 14 (1atm) to 10,000psi!")
         elif salt_weight_percent < 0 or salt_weight_percent > 30: # allow maximum solubility values!
             raise ValueError("The valid salt weight percent range is 0 to 25%")

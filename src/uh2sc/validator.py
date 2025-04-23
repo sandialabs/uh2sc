@@ -141,6 +141,21 @@ def validation(inp):
                 error(field,"pipe minor loss coefficients must be between "+
                       str(0.0)+ " and " +
                       str(max_coef))
+                
+    def valve_pressure_check(field,value,error):
+        if isinstance(value,str):
+            if value != "follow cavern":
+                error(field,"The reservoir pressure can either be a numeric"
+                      +" value or the string 'follow cavern'. You have input"
+                      +f" the invalid value {value}")
+        elif isinstance(value,(float,int)):
+            if value < 0.0 or value > 500000000:
+                error(field,"The reservoir pressure must be between 0.0 Pa"
+                      +f" and 500 MPa! You input {value}")
+        else:
+            error(field,"The reservoir pressure must be a string or number!")
+                
+        
 
     def fluid_string_check(field,value,error):
         # verify all species are allowed in CoolProps (CP)
@@ -194,7 +209,8 @@ def validation(inp):
                   "check_pipe_roughness":check_pipe_roughness,
                   "check_pipe_minor_loss_coef":check_pipe_minor_loss_coef,
                   "fluid_string_check":fluid_string_check,
-                  "time_step_less_than_end_time":time_step_less_than_end_time}
+                  "time_step_less_than_end_time":time_step_less_than_end_time,
+                  "valve_pressure_check":valve_pressure_check}
 
     def _add_check_with_functions(schema,dispatcher):
         # recursive function

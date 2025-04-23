@@ -114,19 +114,7 @@ class Well(AbstractComponent):
                     pipe.set_adjacent_pipes(adj_inner_pipe=pipes[idx-1],adj_outer_pipe=None)
                 else:
                     pipe.set_adjacent_pipes(adj_inner_pipe=pipes[idx-1],adj_outer_pipe=pipes[idx+1])
-
-
-    def step(self,i,P_cavern,cavern_obj,wname):
-
-        # the fluid arrives at the exact pressure the cavern is at
-        # for ideal pipes. Energy changes are not quantified.
-        if self.input["ideal_pipes"]:
-            for pipe in self.pipes.items():
-               # follow the exact pressure
-               pipe.pres_fluid[-1] = P_cavern
-        else:
-            for pname, pipe in self.pipes.items():
-                pipe.step(cavern_obj,wname,i)
+                    
                 
     @property
     def global_indices(self):
@@ -165,6 +153,7 @@ class Well(AbstractComponent):
         this is so that specific properties and methods can be invoked
 
         """
+        return "Well"
 
 
     def evaluate_residuals(self,x=None):
@@ -220,13 +209,19 @@ class Well(AbstractComponent):
                 total_flow = pipe.mass_rates[0,:].sum()
                 
                 if mdot > 0: # flow is into the cavern
-                
                     fluid = pipe.fluid
                     t_in = pipe.valve['reservoir']['temperature']
-                    p_in = pipe.valve['reservoir']['pressure']
+                    if pipe.valve['reservoir']['pressure'] == "follow cavern":
+                        p_in = comp._p_cavern
+                        t_exit_inverted, p_exit_inverted = pipe.initial_adiabatic_static_column(
+                                t_in, p_in, -mdot)
+                        p_in = p_exit_inverted[0]
+                    else:
+                        p_in = pipe.valve['reservoir']['pressure']
+                        
                     t_exit, p_exit = pipe.initial_adiabatic_static_column(
                             t_in, p_in, mdot)
-                    if p_exit[-1] < comp._p_cavern:
+                    if p_exit[-1] < comp._p_cavern*0.99:
                         # insufficient potential kinetic energy to flow!
                         warn("Flow is not occuring because reservoir pressure"
                              +" plus adiabatic column pressure change is less"
@@ -249,7 +244,8 @@ class Well(AbstractComponent):
                 gmdots = calculate_component_masses(fluid, mdot)
                 # mass balance of each gas component
                 
-                residuals[0:self._number_fluids] = pipe.mass_rates[0,:] - gmdots
+                # factor 1000 to make mass flow match more important!
+                residuals[0:self._number_fluids] = 1000 * (pipe.mass_rates[0,:] - gmdots)
                 _eqn += self._number_fluids
                 residuals[_eqn] = pipe.temp_fluid[-1] - t_exit[-1]
                 _eqn += 1

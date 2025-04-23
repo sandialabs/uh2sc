@@ -57,10 +57,11 @@ mdot:
     required: true
     schema:
       pressure:
-        max: 100000000.0
-        min: 0.0
         required: true
-        type: number
+        type: 
+        - number
+        - string
+        check_with: valve_pressure_check
       temperature:
         max: 500
         min: 0.0
