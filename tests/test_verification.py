@@ -36,7 +36,7 @@ def create_df_from_sim_output(nonleapyear,results_dict):
     df = pd.DataFrame(results_dict)
     epoch = datetime(nonleapyear,1,1)
     result = [pd.Timestamp(epoch + timedelta(seconds=second_of_year))
-              for second_of_year in df["Time (s)"]]
+              for second_of_year in df["Time (sec)"]]
 
     df.index = result
 
@@ -78,26 +78,12 @@ class Nielson2008CavernCase(object):
         """
         con = Constants()
 
-        inp = {}
-        subcat = ["cavern","initial","calculation","heat_transfer","ghes","wells"]
-        for cat in subcat:
-            inp[cat] = {}
-
-
-
         # CAVERN GEOMETRY
         self.cavern_height = 1000 * con.feet_to_meters
         self.cavern_volume = 5.61e6 * con.feet_to_meters **3
         self.cavern_diameter = np.sqrt(self.cavern_volume / (self.cavern_height * np.pi * 0.25))
         self.cavern_top_depth = 3000 * con.feet_to_meters
 
-
-        # CAVERN CHARACTERISTICS
-        _overburden_pressure = con.gravitational_constant * (1000 * con.feet_to_meters
-                                                        * 144 * con.lbs_ft3_2_kg_m3
-                                                    + 2000 * con.feet_to_meters
-                                                        * 135 * con.lbs_ft3_2_kg_m3)
-                                                        #Pa  ~ pressure at 1000 m
 
         # values from Nieland2008
         max_casing_seat_pressure = 2465 * con.psi_to_Pa
@@ -109,57 +95,6 @@ class Nielson2008CavernCase(object):
             self.cavern_height/2 + 100 * con.feet_to_meters)
         self.min_avg_pressure = min_casing_seat_pressure + min_pressure_gradient * (
             self.cavern_height/2 + 100 * con.feet_to_meters)
-
-        # axisymmetric model inputs
-        axisym_elements_per_length = 4
-        distance_to_insulated = 100
-        distance_to_ground_temp = 600
-
-        # salt characteristics
-        salt_thermal_conductivity = 3 * con.btu_p_hrftF_2_W_p_m_K  #W/m-K
-        salt_specific_heat = 0.2 * con.btu_p_lbF_2_J_p_kgK #J/kgK
-        salt_density = 135 * con.lbs_ft3_2_kg_m3 # kg/m3
-
-        surface_temperature = fahrenheit_to_kelvin(70)
-        temp_increase_with_depth = (0.012
-                                    / con.scale_factor_between_kelvin_and_rankin
-                                    / con.feet_to_meters)
-        avg_ground_temperature = (surface_temperature
-                                  + temp_increase_with_depth
-                                  * (self.cavern_top_depth
-                                     + self.cavern_height / 2))
-        
-        inp["initial"]["start_date"] = pd.date_range("1/1/2023",'1/1/2023',1)[0]
-        # calculation inputs
-        inp["calculation"]["time_step"] = con.tstep
-
-
-        # give direct control without an input file
-        inp["cavern"] = {}
-        inp["cavern"]["height"] = self.cavern_height  #meters
-        inp["cavern"]["diameter"] = self.cavern_diameter # meters
-        inp["ghes"] = {}
-        inp["ghes"]["nielson_ghe"] = {}
-        inp["ghes"]["nielson_ghe"]["modeled_radial_thickness"] = distance_to_insulated
-        inp["ghes"]["nielson_ghe"]["density"] = salt_density  #kg/m3
-        inp["ghes"]["nielson_ghe"]["heat_capacity"] = salt_specific_heat
-        inp["ghes"]["nielson_ghe"]["farfield_temperature"] = avg_ground_temperature
-        inp["ghes"]["nielson_ghe"]["thermal_conductivity"] = salt_thermal_conductivity
-        inp["ghes"]["nielson_ghe"]["number_element"] = 4 #axisym_elements_per_length * distance_to_insulated
-        inp["ghes"]["nielson_ghe"]["distance_to_farfield_temp"] = distance_to_ground_temp #m
-        
-        inp["wells"] = {}
-        inp["wells"]["cavern_well"] = {}
-        inp["wells"]["cavern_well"]["valves"] = {}
-        inp["wells"]["cavern_well"]["valves"]["inflow_mdot"] = {}
-        inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["reservoir"] = {}
-        inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["reservoir"]["pressure"] = 8e6 # does not affect the calculation as configured
-        inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["type"] = "mdot"
-        inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["reservoir"]["temperature"] = fahrenheit_to_kelvin(100)
-        
-        # This input has to be tricked into coming from the ground model.
-        inp["heat_transfer"]["h_inner"] = "calc"  # we need to Figure out what this should be
-
 
 
         """
@@ -202,7 +137,6 @@ class Nielson2008CavernCase(object):
                                                    360:319.8}
                             }
                        }
-        self.inp = inp
 
 
 def cycle_flow_commands(model):
@@ -247,17 +181,16 @@ class TestSaltCavernVerification(unittest.TestCase):
         # load constants for the Nielson paper.
         cls.nielson_obj = Nielson2008CavernCase()
 
-        cls.print_figures = True
-        cls.print_msg = True
-        cls.run_all = True
-
+        # one parameter that moves this to a long run -time 
+        # verification case with plots.
+        cls.run_verification = True
 
     @classmethod
     def tearDownClass(cls):
         pass
 
 
-    def test_verification_(self):
+    def test_verification(self):
 
         """
         This test takes ~200-300 seconds and is a validation test that compares
@@ -266,148 +199,156 @@ class TestSaltCavernVerification(unittest.TestCase):
 
         """
 
-        if self.run_all:
+        con = Constants()
+
+        study_input = self.nielson_obj.study_input
+
+        inp_path = os.path.join(os.path.dirname(__file__),
+           "test_data","nielson_verification.yml")
+
+        #Loop over variable inputs
+        with open(inp_path,'r',encoding='utf-8') as infile:
+            inp = yaml.load(infile, Loader=yaml.FullLoader)
             
+        if not self.run_verification:
+            # reduce to a single gas.
+            study_input = {"H2":study_input.pop("H2")}
+            
+            
+        for gas_type,subd in study_input.items():
+            
+            if self.run_verification:
+               days_per_cycle_list = subd["days_per_cycle"]
+            else:
+                # cut it short
+               days_per_cycle_list = [subd["days_per_cycle"][0]]
 
-            con = Constants()
+            for days_per_cycle in days_per_cycle_list:
 
-            study_input = self.nielson_obj.study_input
-            inp = self.nielson_obj.inp
-            # inpc is no longer used.
-            #inpc = self.nielson_obj.inpc
+                # THIS IS NO LONGER USED BUT I HAVE LEFT IT HERE 
+                # SO THAT YOU CAN SEE HOW I DETERMINED THE MASS RATE
+                # NEEDED.
+                #Prep inputs
 
-            inp_path = os.path.join(os.path.dirname(__file__),
-               "test_data","nielson_verification.yml")
+                # establish simulation time parameters
+                end_time = (1/3) * con.seconds_per_hour * con.hours_per_day * days_per_cycle
 
-            #Loop over variable inputs
-            with open(inp_path,'r',encoding='utf-8') as infile:
-                inp = yaml.load(infile, Loader=yaml.FullLoader)
+                # read verification dataset from Nielson
+                filename = subd['file'][days_per_cycle]
+                verify_obj = prepare_csv_data(con.nonleapyear,os.path.join(
+                    os.path.dirname(__file__),"test_data",filename))
 
-            for gas_type,subd in study_input.items():
+                temp_max_pressure = fahrenheit_to_kelvin(
+                    verify_obj["degrees fahrenheit"].max())
+                temp_min_pressure = fahrenheit_to_kelvin(
+                    verify_obj["degrees fahrenheit"].min())
 
-                days_per_cycle_list = subd["days_per_cycle"]
+                rho_max_pressure = PropsSI('D','T',temp_max_pressure,
+                                           'P',self.nielson_obj.max_avg_pressure,gas_type)
+                rho_min_pressure = PropsSI('D','T',temp_min_pressure,
+                                           'P',self.nielson_obj.min_avg_pressure,gas_type)
 
-                for days_per_cycle in days_per_cycle_list:
+                mass_max = rho_max_pressure * self.nielson_obj.cavern_volume
+                mass_min = rho_min_pressure * self.nielson_obj.cavern_volume
+                
+                # # calculate mass flow needed.
+                mdot = -(mass_max - mass_min) / (end_time)
+                # 30e6 Pa is approximately 1000 m deep overburden pressure
+                inp["initial"]["pressure"] = self.nielson_obj.max_avg_pressure
+                inp["initial"]["fluid"] = gas_type
+                inp['initial']['temperature'] = subd['initial_temperatures'][days_per_cycle]
+                
+                if not self.run_verification:
+                    # just run for 2 days and stop
+                    inp['calculation']['end_time'] = 2 * 24 * 3600
 
-                    # THIS IS NO LONGER USED BUT I HAVE LEFT IT HERE 
-                    # SO THAT YOU CAN SEE HOW I DETERMINED THE MASS RATE
-                    # NEEDED.
-                    #Prep inputs
-
-                    # establish simulation time parameters
-                    end_time = (1/3) * con.seconds_per_hour * con.hours_per_day * days_per_cycle
-                    #nstep = end_time / con.tstep
-                    # if np.floor(nstep) != nstep:
-                    #     raise ValueError("You must make the cavern_time_step"
-                    #                      +" an integer multiple of the tstep!")
-                    # else:
-                    #     nstep = int(nstep)
-                    # inp["calculation"]["end_time"] = end_time
-
-                    # read verification dataset from Nielson
-                    filename = subd['file'][days_per_cycle]
-                    verify_obj = prepare_csv_data(con.nonleapyear,os.path.join(
-                        os.path.dirname(__file__),"test_data",filename))
-
-                    temp_max_pressure = fahrenheit_to_kelvin(verify_obj["degrees fahrenheit"].max())
-                    temp_min_pressure = fahrenheit_to_kelvin(verify_obj["degrees fahrenheit"].min())
-
-                    rho_max_pressure = PropsSI('D','T',temp_max_pressure,
-                                               'P',self.nielson_obj.max_avg_pressure,gas_type)
-                    rho_min_pressure = PropsSI('D','T',temp_min_pressure,
-                                               'P',self.nielson_obj.min_avg_pressure,gas_type)
-
-                    mass_max = rho_max_pressure * self.nielson_obj.cavern_volume
-                    mass_min = rho_min_pressure * self.nielson_obj.cavern_volume
-                    
-
-                    # # HERE IS WHERE I LEFT OFF. THIS routine is specifying mass flow in
-                    # # in a way that should probably just be put in the input file
-                    # # We want to move away from a lot of custom stuff happening 
-                    # # here and to have correct values in the actual input file
-
-                    # # calculate mass flow needed.
-                    mdot = -(mass_max - mass_min) / (end_time)
-                    # 30e6 Pa is approximately 1000 m deep overburden pressure
-                    inp["initial"]["pressure"] = self.nielson_obj.max_avg_pressure
-                    inp["initial"]["fluid"] = gas_type
-                    inp['initial']['temperature'] = subd['initial_temperatures'][days_per_cycle]
-
-                    # this just takes single steps
-                    #inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["time"] = [
-                    #    con.tstep*idx for idx in range(nstep+1)]
-                    #inp["wells"]["cavern_well"]["valves"]["inflow_mdot"]["mdot"] = [
-                    #    mdot for idx in range(nstep+1)]
-
-                    # create model object
-                    #inp["calculation"]["end_time"] = 2592000
-                    #inp["calculation"]["time_step"] = 86400
-                    model = Model(inp,solver_options={"TOL":1.0e-2})
+                # create model object
+                model = Model(inp,solver_options={"TOL":1.0e-2})
+                
+                if self.run_verification:
                     model.components['cavern'].troubleshooting = True
-                    # create salt caver object
-                    # sc = SaltCavern(inp)
-                    # """
-                    # RUN
-                    # """
-                        
-                    #model.hit_it = False
-                    try:
-                        model.run()
-                    except:
-                        breakpoint()
 
-                    
-                    
-                    cav_res = model.components['cavern'].results
-                    
-                    plt.plot(cav_res['Time (sec)'],cav_res['Cavern energy (J)'],cav_res['Time (sec)'],cav_res['Brine energy (J)'])
+                # """
+                # RUN
+                # """
+                model.run()
 
-                    model.plot_solution(model.xg_descriptions)
+                cav_res = model.components['cavern'].results
+                
+                plt.plot(cav_res['Time (sec)'],cav_res['Cavern energy (J)'],
+                         cav_res['Time (sec)'],cav_res['Brine energy (J)'])
 
-                    breakpoint()
-                    sc = model.components["cavern"]
-                    v_df = create_df_from_sim_output(con.nonleapyear, sc.cavern_results)
+                model.plot_solution(model.xg_descriptions)
 
-                    s_kelvin = fahrenheit_to_kelvin(verify_obj['degrees fahrenheit'])
-                    if self.print_figures:
-                        fig,ax = plt.subplots(1,1,figsize=(20,10))
-                        v_df['Gas temperature (K)'].plot(ax=ax,label="Gas")
-                        v_df['Wall temperature (K)'].plot(ax=ax,label="Wall")
+                sc = model.components["cavern"]
+                v_df = create_df_from_sim_output(con.nonleapyear, sc.results)
 
-                        s_kelvin.plot(ax=ax,label="Gas Nielson",
-                                      linestyle="None",marker="x",markersize=10)
-                        ax.legend(["Gas","Wall","Gas Nielson"])
-                        ax.grid("on")
+                s_kelvin = fahrenheit_to_kelvin(verify_obj['degrees fahrenheit'])
+                if self.run_verification:
+                    fig,ax = plt.subplots(1,1,figsize=(20,10))
+                    v_df['Cavern temperature (K)'].plot(ax=ax,label="Gas")
+                    v_df['Cavern wall temperature (K)'].plot(ax=ax,label="Wall")
+
+                    s_kelvin.plot(ax=ax,label="Gas Nielson",
+                                  linestyle="None",marker="x",markersize=10)
+                    ax.legend(["Gas","Wall","Gas Nielson"])
+                    ax.grid("on")
 
 
-                        fig.savefig('comparison'+ filename[:-3]+'png',dpi=300)
+                    fig.savefig('comparison'+ filename[:-3]+'png',dpi=300)
 
-                    time_s_nielson = verify_obj['day of year'].values * con.second_in_day
-                    y_k_nielson = s_kelvin.values
-                    ybar_nielson = np.interp(time_s_nielson,v_df['Time (s)'].values,v_df[
-                        'Gas temperature (K)'].values)
-                    error = ybar_nielson - y_k_nielson
-                    uerror = error[int(len(error)/2):]
-                    max_error = np.abs(uerror.max())
-                    min_error = np.abs(uerror.min())
-                    mean_error = np.abs(uerror.mean())
+                time_s_nielson = verify_obj['day of year'].values * con.second_in_day
+                y_k_nielson = s_kelvin.values
+                time_s_nielson_cutoff = time_s_nielson[time_s_nielson <= inp['calculation']['end_time']]
+                
+                ybar_nielson = np.interp(time_s_nielson_cutoff,v_df['Time (sec)'].values,v_df[
+                    'Cavern temperature (K)'].values)
+                
+                
+                error = ybar_nielson - y_k_nielson[0:len(ybar_nielson)]
+                uerror = error[int(len(error)/2):]
+                error_extremes = np.array([np.abs(uerror.max()), np.abs(uerror.min())])
+                max_error = np.max(error_extremes)
+                min_error = np.min(error_extremes)
+                mean_error = np.abs(uerror.mean())
+
+                #
+                if self.run_verification:
                     msg = ("The verification match between Nielson 2008 and this"
                           +" model has degraded in comparison to the 12/8/2023 original check.")
-
-                    #
-                    if self.print_msg:
-                        print("++++++++++++++++++++++++++++++++++")
-                        print(gas_type + ":" + str(days_per_cycle) + ":\n\n")
-                        print("max:" + str(max_error) + " < " + str(
-                            subd['error'][days_per_cycle]['max']))
-                        print("min:" + str(min_error) + " < " + str(
-                            subd['error'][days_per_cycle]['min']))
-                        print("mean:" + str(mean_error) + " < " + str(
-                            subd['error'][days_per_cycle]['mean']))
-                        print("------------------------------------------")
+                    print("++++++++++++++++++++++++++++++++++")
+                    print(gas_type + ":" + str(days_per_cycle) + ":\n\n")
+                    print("max:" + str(max_error) + " < " + str(
+                        subd['error'][days_per_cycle]['max']))
+                    print("min:" + str(min_error) + " < " + str(
+                        subd['error'][days_per_cycle]['min']))
+                    print("mean:" + str(mean_error) + " < " + str(
+                        subd['error'][days_per_cycle]['mean']))
+                    print("------------------------------------------")
                     self.assertLess(max_error, subd['error'][days_per_cycle]['max'], msg)
                     self.assertLess(min_error, subd['error'][days_per_cycle]['min'], msg)
                     self.assertLess(mean_error, subd['error'][days_per_cycle]['mean'], msg)
+                else:
+                    # don't let the error shift without 
+                    max_error_threshold = 7.24
+                    min_error_threshold = 6.09
+                    mean_error_bounds = [6.6,6.7]
+                    if (max_error < max_error_threshold 
+                        or min_error > min_error_threshold
+                        or (mean_error > mean_error_bounds[0]
+                        and mean_error < mean_error_bounds[1])):
+                        print("The solution has shifted since unit testing was"
+                              +" created 7-24-2025. You need to run the full "
+                              +"verification again by setting "
+                              +"self.run_verification=True in test_verification.py."
+                              +" If the graphical comparisons are good enough by"
+                              +" your judgement, you can change the unit test"
+                              +" comparison thresholds")
+                    self.assertTrue(max_error < max_error_threshold)
+                    self.assertTrue(min_error > min_error_threshold)
+                    self.assertTrue(mean_error < mean_error_bounds[1] 
+                                    and mean_error > mean_error_bounds[0])
+
 
 
 if __name__ == "__main__":

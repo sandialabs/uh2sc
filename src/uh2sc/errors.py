@@ -25,3 +25,12 @@ class FluidStrNumberError(ValueError):
 
 class FluidStrNumbersDoNotAddToOneError(ValueError):
     pass
+
+class FluidMixtureDoesNotExistInCoolProp(ValueError):
+    pass
+
+class FluidMixtureStateInfeasibleInCoolProp(ValueError):
+    pass
+
+class FluidMixturePresTempNotValid(ValueError):
+    pass

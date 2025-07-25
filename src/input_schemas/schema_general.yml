@@ -52,6 +52,7 @@ heat_transfer:
   allow_unknown: false
   allowed:
   - h_inner
+  - h_cavern_brine
   required: false
   schema:
     h_inner:
@@ -60,6 +61,12 @@ heat_transfer:
       type:
       - number
       - string
+    h_cavern_brine:
+      required: true
+      type:
+      - number
+      min: 0.0
+      max: 3000.0
   type: dict
 initial:
   allow_unknown: false

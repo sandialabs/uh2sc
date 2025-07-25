@@ -213,6 +213,7 @@ class SaltCavern(AbstractComponent):
         
         # heat transfer coefficients
         self._ht_coef = input_dict['heat_transfer']['h_inner']
+        self._ht_cavern_brine = input_dict['heat_transfer']['h_cavern_brine']
         
         
         # solution
@@ -379,7 +380,7 @@ class SaltCavern(AbstractComponent):
         avg_h_evap = (h_evaporate + h_evaporate_m1)/2                                             
     
         volume_liquid_brine = m_brine/rho_brine
-        volume_liquid_brine_m1 = m_brine_m1/rho_brine_m1
+        #volume_liquid_brine_m1 = m_brine_m1/rho_brine_m1
         
         # checking for consistency from fsolve!
         vol_cavern_check = np.abs((self._VOL_TOTAL - vol_cavern)/volume_liquid_brine - 1)
@@ -398,14 +399,10 @@ class SaltCavern(AbstractComponent):
         # if mass change vapor > 0 then we are evaporaing which gives negative heat                           
         e_vapor_brine = 0.0 # e_vapor * height_brine / height_total
         e_vapor_cavern = e_vapor
- 
-            
-        if self._model.converged_solution_point:
-            print(f"E vapor brine: {e_vapor_brine}, E vapor cavern: {e_vapor_cavern}")
         
         
-        rho_brine_updated = (m_brine-mass_vapor)/volume_liquid_brine
-        rho_brine_m1_updated = (m_brine_m1 - mass_vapor_m1)/volume_liquid_brine_m1
+        #rho_brine_updated = (m_brine-mass_vapor)/volume_liquid_brine
+        #rho_brine_m1_updated = (m_brine_m1 - mass_vapor_m1)/volume_liquid_brine_m1
         # update fluids _m1 is updated in shift_solution as well
         # this has to be updated here because new values for the
         # variables are continuously tried by the NewtonSolver
@@ -415,7 +412,7 @@ class SaltCavern(AbstractComponent):
         
         # Change in brine volume
         del_vol_brine = -mass_change_vapor/rho_brine
-        del_height_brine = del_vol_brine / self._area_horizontal
+        #del_height_brine = del_vol_brine / self._area_horizontal
     
 
         
@@ -444,11 +441,6 @@ class SaltCavern(AbstractComponent):
                                                                          rho_vapor,
                                                                          rho_cavern_novapor,
                                                                          h_vapor)
-                                                          
-        
-        
-        #q_axi_total, q_axi_brine, q_axi_cavern = self._axisymmetric_heat_flux(
-        #    t_cavern_wall,t_brine_wall,height_cavern)
     
     
         q_cavern_wall, q_brine_wall = self.cavern_wall_heat_flux(t_cavern,
@@ -456,8 +448,9 @@ class SaltCavern(AbstractComponent):
                                   fluid,water,height_cavern,height_brine,
                                   height_total)
         
-        q_cavern_brine = 100 * self._area_horizontal * (t_cavern - t_brine)
-        #q_cavern_brine =0
+        q_cavern_brine = (self._ht_cavern_brine 
+                          * self._area_horizontal 
+                          * (t_cavern - t_brine))
         
         # RADIATION ENERGY TRANSFER FROM BRINE TO CAVERN WALLS
         f12 = self._radiation_vf(diameter_cavern,height_cavern)
@@ -480,7 +473,7 @@ class SaltCavern(AbstractComponent):
         vt_o_d = vol_cavern * t_cavern / rho_cavern_novapor
         #vt_o_d = 0.0
         
-        expansion_term = vt_o_d * dPdT * drhodt
+        #expansion_term = vt_o_d * dPdT * drhodt
         
         if get_independent_vars:
             
@@ -553,18 +546,20 @@ class SaltCavern(AbstractComponent):
         # for GHE's
         
         if self._model.is_test_mode:
-            # cavern flux continuity
-            residuals[_eqn] = q_cavern_wall - q_axi_cavern
-            _eqn += 1
+             q_axi_cavern = self._simplified_axisymmetric_heat_flux(
+                 t_cavern_wall,height_cavern)
+             # cavern flux continuity
+             residuals[_eqn] = q_cavern_wall - q_axi_cavern
+             _eqn += 1
         else:
             residuals[_eqn] = t_cavern_wall-self._t_axisym[0]
-            # for t_axisym in self._t_axisym:
-            #     residuals[_eqn] = (((t_cavern_wall 
-            #                         * (height_cavern - del_height_brine * 0.5) 
-            #                         + t_brine_wall 
-            #                         * (height_brine + del_height_brine * 0.5))
-            #                         /height_total) 
-            #                         - t_axisym)
+        # for t_axisym in self._t_axisym:
+        #     residuals[_eqn] = (((t_cavern_wall 
+        #                         * (height_cavern - del_height_brine * 0.5) 
+        #                         + t_brine_wall 
+        #                         * (height_brine + del_height_brine * 0.5))
+        #                         /height_total) 
+        #                         - t_axisym)
             _eqn += 1
     
         ### -----   CAVERN ENERGY    ----  ###
@@ -617,7 +612,8 @@ class SaltCavern(AbstractComponent):
         if np.isnan(residuals).sum() > 0.0:
             ind_nan = np.where(np.isnan(residuals) == True)[0]
             raise ValueError(f"The following equations produced NaN! {ind_nan}")
-            
+
+        
         return residuals
 
 
@@ -871,10 +867,9 @@ class SaltCavern(AbstractComponent):
             nusselt = natural_convection_nu_vertical(rayleigh, prandtl)
             ht_coef = nusselt * cond / length
             
-            try:
-                cfluid.update(CP.PT_INPUTS,p_restore,t_restore)
-            except:
-                breakpoint()
+
+            cfluid.update(CP.PT_INPUTS,p_restore,t_restore)
+
         else:
             ht_coef = self._ht_coef
         
@@ -965,23 +960,18 @@ class SaltCavern(AbstractComponent):
                 cavern_vapor_mass_flow, cavern_vapor_energy_flow)
     
 
-    def _axisymmetric_heat_flux(self,t_cavern_wall,t_brine_wall,height_cavern):
+    def _simplified_axisymmetric_heat_flux(self,t_cavern_wall,height_cavern):
         
         if self._model.is_test_mode:
+            #q_axi_cavern = 0.0
             q_axi_cavern = ((-t_cavern_wall 
-                           + self._model.test_inputs["farfield_temp"])
-                          /self._model.test_inputs["r_radial"])
-            q_axi_brine = ((-t_brine_wall 
-                             + self._model.test_inputs["farfield_temp"])
-                            /self._model.test_inputs["r_radial"])
-            q_axi_total = q_axi_cavern + q_axi_brine
+                            + self._model.test_inputs["farfield_temp"])
+                           /self._model.test_inputs["r_radial"])
         else:
-            ### -----   WALL HEAT FLUX MATCH TO GHE's ----- ###
-            q_axi_total = np.array(self._q_axisym).sum()
-            q_axi_cavern = q_axi_total * height_cavern / self._height_total
-            q_axi_brine = q_axi_total * self._height_brine / self._height_total
+            raise ValueError("The _simplified_axisymetric_heat_flux is only "
+                             +"meant for test mode!")
             
-        return q_axi_total, q_axi_brine, q_axi_cavern
+        return q_axi_cavern
             
         
         

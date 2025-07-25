@@ -11,9 +11,11 @@ import warnings
 
 import numpy as np
 
-from uh2sc.utilities import (process_CP_gas_string, filter_cpu_count, 
+from uh2sc.utilities import (process_CP_gas_string, filter_cpu_count,
                              find_all_fluids, reservoir_mass_flows,
                              calculate_component_masses)
+from uh2sc.errors import (FluidMixtureDoesNotExistInCoolProp,
+                          FluidMixtureStateInfeasibleInCoolProp)
 from CoolProp import CoolProp as CP
 
 class TestUtilities(unittest.TestCase):
@@ -27,24 +29,31 @@ class TestUtilities(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         pass
-    
+
     def test_process_CP_gas_strings(self):
         """
         Go to http://coolprop.org/fluid_properties/PurePseudoPure.html#list-of-fluids
-        
+
         for the kinds of fluids you can enter.
-        
+
         """
-        
-        
         str1 = "H2"
-        
+
         comp, molefracs, compSRK, fluid = process_CP_gas_string(str1)
-        
+
+        str1 = "H2[0.9]&Methane[0.1]"
+
+        comp, molefracs, compSRK, fluid = process_CP_gas_string(str1)
+
+        str1 = "H2[0.9]&CO2[0.1]"
+
+        comp, molefracs, compSRK, fluid = process_CP_gas_string(str1)
+
+        # This is an infeasible mixture!
+
         str2 = "H2[0.8]&Methane[0.16]&Ethane[0.02]&Propane[0.01]&Butane[0.005]&CarbonDioxide[0.005]"
-        
         comp, molefracs, compSRK, fluid = process_CP_gas_string(str2)
-        
+
         # test an incorrect string:
         with self.assertRaises(ValueError):
             str3 = "H2&Methane[0.1]"
@@ -59,125 +68,102 @@ class TestUtilities(unittest.TestCase):
         # non-float in brackets
         with self.assertRaises(ValueError):
             str6 = "H2[not a number]&Methane[0.1]"
-            comp, molefracs, compSRK, fluid = process_CP_gas_string(str6)  
+            comp, molefracs, compSRK, fluid = process_CP_gas_string(str6)
         # mole fractions do not add to 1.
         with self.assertRaises(ValueError):
             str6 = "H2[0.85]&Methane[0.1]"
-            comp, molefracs, compSRK, fluid = process_CP_gas_string(str6)   
-            
+            comp, molefracs, compSRK, fluid = process_CP_gas_string(str6)
+
     def test_filter_cpu_count(self):
-        
+
         max_cpu = os.cpu_count()
-        
-        
+
+
         less_than = max_cpu - 2
-        
+
         more_than = max_cpu + 1
-        
+
         warnings.filterwarnings('ignore')
         cpu_count = filter_cpu_count(more_than)
         self.assertEqual(cpu_count,max_cpu-1)
         warnings.filterwarnings('always')
-        
+
         if less_than > 0:
             cpu_count = filter_cpu_count(less_than)
             self.assertEqual(less_than, cpu_count)
-        
+
         cpu_count = filter_cpu_count(None)
         self.assertEqual(cpu_count,max_cpu - 1)
-        
+
         cpu_count = filter_cpu_count(1)
         self.assertEqual(cpu_count,1)
-        
+
+
     def test_find_all_fluids_and_mass_flow(self):
-        
+
         # include a valve that has no effect
-        self.inputs = {'initial':{'fluid':'H2[0.5]&Methane[0.25]&H2O[0.25]'},
+        self.inputs = {'initial':{'fluid':'Ethane[0.1]&Methane[0.9]',
+                                  'pressure':101325.0,
+                                  'temperature':323.0},
                        'wells':{'cavern_well':{'valves':{'inflow_mdot':
-                            {'type':'mdot','reservoir':{'fluid':'CO2'},'mdot':[0,10],'time':[0,100]},
-                                            'mdot2_valve':{'type':'mdot','reservoir':{'fluid':'N2[0.1]&Butane[0.9]'},'mdot':[0,-10,10],'time':[0,50,100]}}}}}
-            
+                            {'type':'mdot','reservoir':{'fluid':'Ethane[0.1]&Methane[0.9]'},'mdot':[0,10],'time':[0,100]},
+                                            'mdot2_valve':{'type':'mdot','reservoir':{'fluid':'Ethane[0.05]&Methane[0.9]&Butane[0.05]'},'mdot':[0,-10,10],'time':[0,50,100]}}}}}
+
         fluid_components3, fluids3, mdots3, molar_masses3 = find_all_fluids(self)
-        
-        self.assertListEqual(fluid_components3, ['CarbonDioxide', 'Nitrogen',
-                                                 'n-Butane', 'Hydrogen', 
-                                                 'Methane', 'Water'])
-        
+
+
+        self.assertListEqual(fluid_components3, ['Ethane', 'Methane', "n-Butane"])
+
         mdot_valves, mdot_cavern = reservoir_mass_flows(self,5.0)
         self.assertAlmostEqual(-1.0, mdot_valves['cavern_well']['mdot2_valve'].sum())
         self.assertAlmostEqual(0.5, mdot_valves['cavern_well']['inflow_mdot'].sum())
         self.assertAlmostEqual(-0.5, mdot_cavern.sum())
-        
-        
-        
-        self.inputs = {'initial':{'fluid':'H2'},
+
+
+
+        self.inputs = {'initial':{'fluid':'H2',
+                                  'pressure':101325.0,
+                                  'temperature':323.0},
                        'wells':{'cavern_well':{'valves':{'inflow_mdot':
                             {'type':'mdot','reservoir':{'fluid':'H2'},'mdot':[0,10],'time':[0,100]}}}}}
-            
+
         fluid_components, fluids, mdots, molar_masses = find_all_fluids(self)
         self.fluid_components = fluid_components
         self.fluids = fluids
-        
-        mdot_valves, mdot_cavern = reservoir_mass_flows(self,0.0)
-        
-        self.assertAlmostEqual(mdot_cavern[0], 0.0)
-        
-        
-        self.assertEqual(fluid_components[0], "Hydrogen")
-        
-        self.inputs = {'initial':{'fluid':'H2[0.5]&Methane[0.25]&H2O[0.25]'},
-                       'wells':{'cavern_well':{'valves':{'inflow_mdot':
-                            {'type':'mdot','reservoir':{'fluid':'CO2'},'mdot':[0,10],'time':[0,100]}}}}}
-        
-        fluid_components2, fluids2, mdots2, molar_masses2 = find_all_fluids(self)
-        
-        self.assertListEqual(fluid_components2, ['CarbonDioxide', 'Hydrogen',
-                                                 'Methane', 'Water'])
-        
 
-        
+        mdot_valves, mdot_cavern = reservoir_mass_flows(self,0.0)
+
+        self.assertAlmostEqual(mdot_cavern[0], 0.0)
+
+
+        self.assertEqual(fluid_components[0], "Hydrogen")
+
+        self.inputs = {'initial':{'fluid':'Methane[0.749]&Ethane[0.25]&CO2[0.001]',
+                                  'pressure':101325.0,
+                                  'temperature':323.0},
+                       'wells':{'cavern_well':{'valves':{'inflow_mdot':
+                            {'type':'mdot','reservoir':{'fluid':'Methane[0.75]&Ethane[0.15]&CO2[0.1]'},'mdot':[0,10],'time':[0,100]}}}}}
+
+        fluid_components2, fluids2, mdots2, molar_masses2 = find_all_fluids(self)
+
+        self.assertListEqual(fluid_components2, ['Methane', 'Ethane', 'CarbonDioxide'])
+
+
+
     def test_calculate_component_masses(self):
         molar_masses = {"Water":0.01801528,
                         "Hydrogen":0.002016,
                         "Methane":0.01604}
-        
-        
+
+        test_mass_fractions = [0.05,0.45,0.5]
         fluid = CP.AbstractState("HEOS", "H2&Methane&H2O")
-        fluid.set_mole_fractions([0.05,0.45,0.5])
+        fluid.set_mass_fractions(test_mass_fractions)
         fluid.update(CP.PT_INPUTS,1e5,323)
-        
-        masses = calculate_component_masses(fluid,molar_masses,1.0,1.0)
-        
-        self.assertLess(np.abs((masses['gas']-np.array([0.01174723, 0.84118509, 0.14706768])).sum()), 1e-8)
-        self.assertLess(np.abs((masses['liquid']-np.array([7.79216576e-14, 2.98311663e-07, 9.99999702e-01])).sum()), 1e-8)
-        
-        fluid = CP.AbstractState("HEOS", "H2O")
-        fluid.set_mole_fractions([1.0])
-        fluid.update(CP.PT_INPUTS,1e5,400)
-        
-        with self.assertRaises(ValueError):
-            masses2 = calculate_component_masses(fluid,molar_masses,gas_mass=1.0,liquid_mass=1.0)
-        
-        masses2 = calculate_component_masses(fluid,molar_masses,gas_mass=1.0)
-        
-        self.assertAlmostEqual(masses2['gas'][0], 1.0)
-        self.assertAlmostEqual(masses2['liquid'][0], 0.0)
-        
-        fluid = CP.AbstractState("HEOS", "H2O")
-        fluid.set_mole_fractions([1.0])
-        fluid.update(CP.PT_INPUTS,1e5,283)
-        
-        with self.assertRaises(ValueError):
-            masses3 = calculate_component_masses(fluid,molar_masses,gas_mass=1.0,liquid_mass=1.0)
-        
-        masses3 = calculate_component_masses(fluid,molar_masses,liquid_mass=1.0)
-        
-        self.assertAlmostEqual(masses3['gas'][0], 0.0)
-        self.assertAlmostEqual(masses3['liquid'][0], 1.0)
-        
-        pass
-        
-    
+
+        masses = calculate_component_masses(fluid,1.0)
+
+        self.assertLess(np.abs((masses-np.array(test_mass_fractions)).sum()), 1e-8)
+
 
 if __name__ == "__main__":
     PROFILE = False

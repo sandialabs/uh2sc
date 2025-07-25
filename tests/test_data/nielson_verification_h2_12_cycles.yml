@@ -51,3 +51,5 @@ calculation:
   run_parallel: false
 heat_transfer:
   h_inner: "calc" # can enter a constant value if needed.
+  h_cavern_brine: 100 # eventually a model is needed for this 
+                      # as a function of Rayleigh number!

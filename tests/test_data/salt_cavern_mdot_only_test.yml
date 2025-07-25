@@ -68,3 +68,5 @@ calculation:
 heat_transfer:
   number_radial_elements: 300 # for 1-D radial heat transfer
   h_inner: "calc" # can enter a constant value if needed.
+  h_cavern_brine: 100 # eventually a model is needed for this 
+                      # as a function of Rayleigh number!
