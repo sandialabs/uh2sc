@@ -1,3 +1,8 @@
+import os
+import json
+from scipy.io import savemat
+import joblib
+
 import numpy as np
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
@@ -10,9 +15,10 @@ import CoolProp as CP
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error
 from uh2sc.utilities import calculate_cavern_pressure
+import matplotlib.pyplot as plt
 
 class VectorFunctionEmulator:
-    def __init__(self, model, bounds, test_size=0.2, random_state=42, n_jobs=-2):
+    def __init__(self, model, test_size=0.2, random_state=42, n_jobs=-2):
         """
         Initialize the VectorFunctionEmulator class.
 
@@ -24,7 +30,6 @@ class VectorFunctionEmulator:
         - n_jobs: The number of jobs to run in parallel (default: -2, which means all but one CPU core)
         """
         self.model = model
-        self.bounds = bounds
         self.test_size = test_size
         self.random_state = random_state
         self.n_jobs = n_jobs
@@ -55,7 +60,7 @@ class VectorFunctionEmulator:
         """
         return func(x)
 
-    def generate_dataset(self, num_samples, func, parallel=True):
+    def generate_dataset(self, dataset_filepath, func, parallel=True):
         """
         Generate a dataset by sampling the input space and evaluating the function.
 
@@ -68,7 +73,7 @@ class VectorFunctionEmulator:
         - X: A 2D numpy array of input samples
         - y: A 2D numpy array of output samples
         """
-        X = self.sample_space(num_samples)
+        X = np.loadtxt(dataset_filepath, delimiter=',',skip_header=1)
         if parallel:
             y = np.array(Parallel(n_jobs=self.n_jobs)(delayed(self.evaluate_function)(x, func) for x in X))
         else:
@@ -119,77 +124,113 @@ class VectorFunctionEmulator:
 class CavernPressureEmulator(VectorFunctionEmulator):
     # ...
 
-    def calculate_cavern_pressure_wrapper(self, x, m_cavern, t_cavern, m_brine, t_brine, volume_total, area):
+    def calculate_cavern_pressure_wrapper(self, x):
         try:
             fluid = AbstractState("HEOS", "Methane&Ethane")
             water = AbstractState("HEOS", "Water")
-            water.update(CP.PT_INPUTS,101325,t_brine)
-            fluid.set_mass_fractions([x[0], 1-x[0]])
-            volume_cavern_estimate = volume_total - m_brine/water.rhomass()
+            water.update(CP.PT_INPUTS,10e6,x[3])
+            fluid.set_mass_fractions([x[7], 1-x[8]])
             return calculate_cavern_pressure(fluid,
-                                             x[1], #m_cavern
-                                             x[2], #t_cavern
+                                             x[0], #m_cavern
+                                             x[1], #t_cavern
                                              water,
-                                             x[3], #m_brine
-                                             x[4], #t_brine
-                                             x[5], #volume_total
-                                             x[6], #area
-                                             volume_cavern_estimate)
+                                             x[2], #m_brine
+                                             x[3], #t_brine
+                                             x[4], #volume_total
+                                             x[5], #area
+                                             x[6])
         except Exception as e:
             print(f"Error calculating cavern pressure for x={x}: {e}")
-            return None
+            return [None for idx in range(10)]
+    
+    def clean_data(self,data):
+        cleaned_data = []
+        for row in data:
+            cleaned_row = []
+            for value in row:
+                if isinstance(value, np.ndarray):
+                    cleaned_row.append(value[0])
+                else:
+                    cleaned_row.append(value)
+            cleaned_data.append(cleaned_row)
+        return np.array(cleaned_data)
 
-    def generate_dataset(self, num_samples, m_cavern, t_cavern, m_brine, t_brine, volume_total, area, parallel=True):
-        bounds = [(0, 1),  # mass fraction of the first component
-                  (10,m_cavern),
-                  (275,t_cavern),
-                  (10,m_brine),
-                  (275,t_brine),
-                  (100,volume_total),
-                  (10,area)]
-        X = self.sample_space(num_samples)
+    def generate_dataset(self, dataset_filepath, parallel=True):
+        #headers = np.genfromtxt('your_file.csv', delimiter=',', skip_header=0, max_rows=1)
+        X = np.loadtxt(dataset_filepath, delimiter=',',skiprows=1)
+        num_samples = X.shape[0]
         if parallel:
-            y = np.array(Parallel(n_jobs=self.n_jobs)(delayed(self.calculate_cavern_pressure_wrapper)(X[i],
-                                                                                                    m_cavern,
-                                                                                                    t_cavern,
-                                                                                                    m_brine,
-                                                                                                    t_brine,
-                                                                                                    volume_total,
-                                                                                                    area)
-                                                                                   for i in range(num_samples)))
+            y = Parallel(n_jobs=self.n_jobs)(delayed(self.calculate_cavern_pressure_wrapper)(X[i])
+                                                                                for i in range(num_samples))
+
         else:
-            y = np.array([self.calculate_cavern_pressure_wrapper(X[i],
-                                                                 m_cavern,
-                                                                 t_cavern,
-                                                                 m_brine,
-                                                                 t_brine,
-                                                                 volume_total,
-                                                                 area)
-                          for i in range(num_samples)])
+            y = [self.calculate_cavern_pressure_wrapper(X[i])
+                          for i in range(num_samples)]
+
         # Remove any None values from y
+        y = self.clean_data(y) 
         mask = y != None
-        X = X[mask]
-        y = y[mask]
+        mask_x = np.tile(np.all(mask, axis=1)[:, None], (1, 9))
+
+        Xshape = X.shape
+        Xvec = X[mask_x]
+        X = Xvec.reshape(int(len(Xvec)/Xshape[1]),Xshape[1])
+        yshape = y.shape
+        yvec = y[mask]
+        y = yvec.reshape(int(len(yvec)/yshape[1]),yshape[1])
         return X, y
+    
+def plot_error_vs_test_samples(y_test, y_pred,sample_size,filedir):
+    num_outputs = y_pred.shape[1]
+    fig, axs = plt.subplots(num_outputs, figsize=(10, 2*num_outputs))
+    for i, ax in enumerate(axs):
+        errors = np.abs(y_test[:, i] - y_pred[:, i])
+        ax.plot(errors)
+        ax.set_xlabel('Test Sample')
+        ax.set_ylabel(f'Error (Output {i+1})')
+        ax.set_title(f'Error vs. Test Sample (Output {i+1})')
+    plt.tight_layout()
+    plt.savefig(os.path.join(filedir,f"error_for_model_{sample_size}.png"),dpi=300)
 
-# Example usage:
-m_cavern = 2e5
-m_brine = 2e5
-volume_total = 10e6
-t_cavern = 320
-t_brine = 320
-area = 10000
-bounds = [(0, 1),  # mass fraction of the first component
-                  (10,m_cavern),
-                  (275,t_cavern),
-                  (10,m_brine),
-                  (275,t_brine),
-                  (100,volume_total),
-                  (10,area)]
+for sample_size in [100]: #,1000,10000,100000]:
 
-emulator = CavernPressureEmulator(RandomForestRegressor(), bounds)
-X, y = emulator.generate_dataset(100, m_cavern, t_cavern, m_brine, t_brine, volume_total, area, parallel=False)
-X_train, X_test, y_train, y_test = emulator.split_dataset(X, y)
-emulator.train_model(X_train, y_train)
-score = emulator.evaluate_model(X_test, y_test)
-print("R-squared score:", score)
+    filedir = os.path.dirname(__file__)
+    dataset_filepath = os.path.join(filedir,f"salt_cavern_training_dataset_{sample_size}.csv")
+    emulator = CavernPressureEmulator(RandomForestRegressor())
+    X, y = emulator.generate_dataset(dataset_filepath=dataset_filepath,parallel=True)
+    X_train, X_test, y_train, y_test = emulator.split_dataset(X, y)
+    emulator.train_model(X_train, y_train)
+    score = emulator.evaluate_model(X_test, y_test)
+    y_pred = emulator.model.predict(X_test)
+    plot_error_vs_test_samples(y_test, y_pred,sample_size,filedir)
+    
+    print("R-squared score:", score)
+    
+    # Get the model's parameters
+    params = emulator.model.get_params()
+    
+    # Serialize the trained model
+    joblib.dump(emulator, os.path.join(filedir,f'emulator_{sample_size}.joblib'))
+    
+    # Later, deserialize the trained model
+    emulator = joblib.load(os.path.join(filedir,f'emulator_{sample_size}.joblib'))
+    
+    # Make predictions using the restored model
+    y_pred2 = emulator.model.predict(X_test)
+    
+    error = y_pred - y_pred2
+    
+    print(f"The maximum error in reloading the model is: {error.max()}")
+
+
+"""
+10
+100 0.529498924
+1000 0.67752470947575
+
+
+"""
+
+pass
+
+

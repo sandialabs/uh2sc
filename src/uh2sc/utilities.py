@@ -30,7 +30,7 @@ const = Constants()
 
 
 def _update_fluid(fluid,pres,temp):
-    try:    
+    try:
         fluid.update(CP.PT_INPUTS,pres,temp)
     except ValueError as exc:
         if "not good" in str(exc):
@@ -46,7 +46,7 @@ def _update_fluid(fluid,pres,temp):
             +f"fractions equal to {fluid.get_mass_fractions()}' please adjust"
             +f" your mass fractions to ratios that work!. The mixture model"
             +" listed pressure as an invalid value!\n\n") from exc
-            
+
         else:
             raise exc
 
@@ -207,7 +207,7 @@ def verify_mixture_bips(fluid):
 
     bip_status = {}
     one_bip_present = False
-    
+
     # Thank you ChatGPT, the other AI did not know this!
     var_to_try = ["kij","vij","gammaT","betaT"]
 
@@ -224,22 +224,22 @@ def verify_mixture_bips(fluid):
             for j in range(i + 1, num_fluids):  # Start from i + 1 to avoid checking pairs twice and self-interaction
                 fluid1_name = fluid_names[i]
                 fluid2_name = fluid_names[j]
-                
+
                 got_a_var = False
                 for var in var_to_try:
                     try:
-                        
+
                         # Attempt to retrieve the k_ij BIP
                         # {Link: get_binary_interaction_double() https://coolprop.org/fluid_properties/Mixtures.html} requires indices and the parameter name
                         var_value = fluid.get_binary_interaction_double(i, j, var)
                         bip_status[(fluid1_name, fluid2_name, var)] = var_value
-    
+
                         if var_value != 0.0:
                             #print(f"BIP (k_ij) for {fluid1_name}-{fluid2_name}: {kij_value}")
                             one_bip_present = True
-    
+
                     except Exception as e:
-                        
+
                         #print(f"Error checking BIP for {fluid1_name}-{fluid2_name}: {e}")
                         bip_status[(fluid1_name, fluid2_name)] = "Error"
 
@@ -415,7 +415,7 @@ def find_all_fluids(model):
         if wname != 'cavern':
             for vname, fluid in fluiddict.items():
                 _update_fluid(fluid,pres,temp)
-       
+
         _update_fluid(fluids['cavern'],pres,temp)
 
 
@@ -462,7 +462,7 @@ def _construct_ordered_fluid_str(fluid_components,fluid_mapping,names=None):
 
             fluid_str += f"{prestr}{pure_fluid}[{massfrac:.8e}]"
         return fluid_str
-    
+
 
 
 def brine_average_pressure(fluid,water,height_total,height_brine,rho_g=None,pres_g=None):
@@ -552,10 +552,10 @@ def calculate_cavern_pressure(fluid,
                               volume_total,
                               area,
                               volume_cavern_estimate):
-    
 
 
-    
+
+
     def conservation_of_volume(vol_cavern, return_vapor_variables=False):
 
         volume_liquid_brine = volume_total - vol_cavern
@@ -572,14 +572,13 @@ def calculate_cavern_pressure(fluid,
 
         rho_gas_no_vapor = m_cavern.sum() / vol_cavern
         rho_brine = m_brine / volume_liquid_brine
-        
-        if len(fluid.fluid_names()) == 1: 
+
+        if len(fluid.fluid_names()) == 1:
             pressure_gas = CP.PropsSI('P','D',rho_gas_no_vapor,
                                           'T', t_cavern,create_CP_gas_string(fluid))
         else:
             _find_pressure_from_rho_T(fluid, rho_gas_no_vapor, t_cavern)
             pressure_gas = fluid.p()
-
 
         (pressure_brine,
          solubility_brine,
