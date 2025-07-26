@@ -141,7 +141,7 @@ class CavernPressureEmulator(VectorFunctionEmulator):
                                              x[6])
         except Exception as e:
             print(f"Error calculating cavern pressure for x={x}: {e}")
-            return [None for idx in range(10)]
+            return [None for idx in range(2)]
     
     def clean_data(self,data):
         cleaned_data = []
@@ -155,40 +155,46 @@ class CavernPressureEmulator(VectorFunctionEmulator):
             cleaned_data.append(cleaned_row)
         return np.array(cleaned_data)
 
-    def generate_dataset(self, dataset_filepath, parallel=True):
-        #headers = np.genfromtxt('your_file.csv', delimiter=',', skip_header=0, max_rows=1)
+    def generate_dataset(self, dataset_filepath, parallel=True,output_filepath=None):
+        
         X = np.loadtxt(dataset_filepath, delimiter=',',skiprows=1)
         num_samples = X.shape[0]
-        if parallel:
-            y = Parallel(n_jobs=self.n_jobs)(delayed(self.calculate_cavern_pressure_wrapper)(X[i])
-                                                                                for i in range(num_samples))
-
+        
+        if output_filepath is None or not os.path.exists(output_filepath):
+        
+            if parallel:
+                y = Parallel(n_jobs=self.n_jobs)(delayed(self.calculate_cavern_pressure_wrapper)(X[i])
+                                                                                    for i in range(num_samples))
+    
+            else:
+                y = [self.calculate_cavern_pressure_wrapper(X[i])
+                              for i in range(num_samples)]
+    
+            # Remove any None values from y
+            y = self.clean_data(y) 
+            mask = y != None
+            mask_x = np.tile(np.all(mask, axis=1)[:, None], (1, 9))
+    
+            Xshape = X.shape
+            Xvec = X[mask_x]
+            X = Xvec.reshape(int(len(Xvec)/Xshape[1]),Xshape[1])
+            yshape = y.shape
+            yvec = y[mask]
+            y = yvec.reshape(int(len(yvec)/yshape[1]),yshape[1])
+        
         else:
-            y = [self.calculate_cavern_pressure_wrapper(X[i])
-                          for i in range(num_samples)]
-
-        # Remove any None values from y
-        y = self.clean_data(y) 
-        mask = y != None
-        mask_x = np.tile(np.all(mask, axis=1)[:, None], (1, 9))
-
-        Xshape = X.shape
-        Xvec = X[mask_x]
-        X = Xvec.reshape(int(len(Xvec)/Xshape[1]),Xshape[1])
-        yshape = y.shape
-        yvec = y[mask]
-        y = yvec.reshape(int(len(yvec)/yshape[1]),yshape[1])
+            
+            y = np.genfromtxt(output_filepath, delimiter=',')
         return X, y
     
-def plot_error_vs_test_samples(y_test, y_pred,sample_size,filedir):
+def plot_error_vs_test_samples(y_test, y_pred,sample_size,filedir, headers):
     num_outputs = y_pred.shape[1]
-    fig, axs = plt.subplots(num_outputs, figsize=(10, 2*num_outputs))
+    fig, axs = plt.subplots(num_outputs, figsize=(10, 4*num_outputs))
     for i, ax in enumerate(axs):
         errors = np.abs(y_test[:, i] - y_pred[:, i])
-        ax.plot(errors)
-        ax.set_xlabel('Test Sample')
-        ax.set_ylabel(f'Error (Output {i+1})')
-        ax.set_title(f'Error vs. Test Sample (Output {i+1})')
+        ax.hist(errors)
+        ax.set_xlabel("Error " + headers(i))
+        ax.set_ylabel(f'Count')
     plt.tight_layout()
     plt.savefig(os.path.join(filedir,f"error_for_model_{sample_size}.png"),dpi=300)
 
@@ -196,13 +202,20 @@ for sample_size in [100]: #,1000,10000,100000]:
 
     filedir = os.path.dirname(__file__)
     dataset_filepath = os.path.join(filedir,f"salt_cavern_training_dataset_{sample_size}.csv")
+    output_filepath = os.path.join(filedir,f'salt_cavern_training_dataset_y_vals_{sample_size}.csv')
+    
     emulator = CavernPressureEmulator(RandomForestRegressor())
-    X, y = emulator.generate_dataset(dataset_filepath=dataset_filepath,parallel=True)
+    X, y = emulator.generate_dataset(dataset_filepath=dataset_filepath,parallel=True,output_filepath=output_filepath)
+    
+    
+    np.savetxt(output_filepath, y, delimiter=',')
+    
     X_train, X_test, y_train, y_test = emulator.split_dataset(X, y)
     emulator.train_model(X_train, y_train)
     score = emulator.evaluate_model(X_test, y_test)
     y_pred = emulator.model.predict(X_test)
-    plot_error_vs_test_samples(y_test, y_pred,sample_size,filedir)
+    headers = ["gas pressure (Pa)","gas volume (m3)"]
+    plot_error_vs_test_samples(y_test, y_pred,sample_size,filedir,headers)
     
     print("R-squared score:", score)
     
@@ -225,8 +238,10 @@ for sample_size in [100]: #,1000,10000,100000]:
 
 """
 10
-100 0.529498924
-1000 0.67752470947575
+100 0.699
+1000 0.889
+10000
+100000
 
 
 """

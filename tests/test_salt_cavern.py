@@ -219,7 +219,7 @@ class TestSaltCavern(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    PROFILE = True
+    PROFILE = False
 
     if PROFILE:
         import cProfile

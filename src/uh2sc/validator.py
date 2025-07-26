@@ -141,7 +141,7 @@ def validation(inp):
                 error(field,"pipe minor loss coefficients must be between "+
                       str(0.0)+ " and " +
                       str(max_coef))
-                
+
     def valve_pressure_check(field,value,error):
         if isinstance(value,str):
             if value != "follow cavern":
@@ -154,8 +154,8 @@ def validation(inp):
                       +f" and 500 MPa! You input {value}")
         else:
             error(field,"The reservoir pressure must be a string or number!")
-                
-        
+
+
 
     def fluid_string_check(field,value,error):
         # verify all species are allowed in CoolProps (CP)
@@ -188,13 +188,13 @@ def validation(inp):
                           "Permissible entries for CoolProps are:\n\n"+
                           str(allowed_gas_species))
 
-                
+
     def time_step_less_than_end_time(field,value,error):
         end_time = inp['calculation']["end_time"]
-        
+
         if end_time < value:
             error(field, "The time_step cannot be greater than the end time!")
-        
+
 
 
 
@@ -318,23 +318,28 @@ def validation(inp):
 
     # Now check that GHE names connecting to the wells and caverns
     # are actual names.
-    if (inp["cavern"]["ghe_name"] not in gnames) and (inp["cavern"]["ghe_name"] != "test_mode"):
-        cavern_ghe_name = "cavern_ghe_name"
-        validate_dict[cavern_ghe_name] = _LocalErrorObj()
-        retval[cavern_ghe_name] = validate_dict[cavern_ghe_name].validate(
-                      "The cavern ground heat exchanger"
-                   + f"(GHE) name `{inp["cavern"]["ghe_name"]}` does not"
-                   + f"exist, the defined names for GHEs is: {gnames}")
+    if "ghe_name" not in inp["cavern"]:
+        raise KeyError("Every cavern must have a ground heat exchanger (GHE)."
+        +" Please review the schema_general.yml file! Here is the incorrect "
+        +f"cavern data: {inp['cavern']}")
+    else:
+        if (inp["cavern"]["ghe_name"] not in gnames) and (inp["cavern"]["ghe_name"] != "test_mode"):
+            cavern_ghe_name = "cavern_ghe_name"
+            validate_dict[cavern_ghe_name] = _LocalErrorObj()
+            retval[cavern_ghe_name] = validate_dict[cavern_ghe_name].validate(
+                        "The cavern ground heat exchanger"
+                    + f"(GHE) name `{inp["cavern"]["ghe_name"]}` does not"
+                    + f"exist, the defined names for GHEs is: {gnames}")
 
-    for name,well in inp["wells"].items():
-        if "ghe_name" in inp["wells"][name]:
-            if inp["wells"][name]["ghe_name"] not in gnames:
-                well_ghe_name = f"well_{name}_ghe_name"
-                validate_dict[well_ghe_name] = _LocalErrorObj()
-                retval[well_ghe_name] = validate_dict[well_ghe_name].validate(
-                              f"The well `{name}` ground heat exchanger"
-                            + f"(GHE) name `{inp["wells"][name]["ghe_name"]}` does not"
-                            + f"exist, the defined names for GHEs is: {gnames}")
+        for name,well in inp["wells"].items():
+            if "ghe_name" in inp["wells"][name]:
+                if inp["wells"][name]["ghe_name"] not in gnames:
+                    well_ghe_name = f"well_{name}_ghe_name"
+                    validate_dict[well_ghe_name] = _LocalErrorObj()
+                    retval[well_ghe_name] = validate_dict[well_ghe_name].validate(
+                                f"The well `{name}` ground heat exchanger"
+                                + f"(GHE) name `{inp["wells"][name]["ghe_name"]}` does not"
+                                + f"exist, the defined names for GHEs is: {gnames}")
 
 
 

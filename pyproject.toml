@@ -16,7 +16,10 @@ dependencies = [
      "cerberus",
      "pandas",
      "pyyaml",
-     "rich-click"
+     "rich-click",
+     "scikit-learn",
+     "joblib",
+     "matplotlib"
 ]
 
 description = "This package simulates salt caverns with hydrogen and other gas mixtures"

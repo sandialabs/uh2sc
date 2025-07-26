@@ -542,6 +542,48 @@ def _find_pressure_from_rho_T(fluid0, rho_target, T):
     fluid0.update(CP.PT_INPUTS, P_solution, T)
 
 
+def conservation_of_volume(vol_cavern, volume_total, area, water, t_cavern, 
+                           t_brine, m_cavern, m_brine, fluid, 
+                           return_vapor_variables=False):
+
+    volume_liquid_brine = volume_total - vol_cavern
+    height_brine = volume_liquid_brine / area
+    height_cavern = vol_cavern / area
+    height_total = volume_total / area
+
+    (mass_vapor, rho_vapor, h_vapor_1, p_vapor, h_evaporate) = (
+        evaporation_energy(water,
+                           t_cavern,
+                           t_brine,
+                           vol_cavern))
+
+
+    rho_gas_no_vapor = m_cavern.sum() / vol_cavern
+    rho_brine = m_brine / volume_liquid_brine
+
+    if len(fluid.fluid_names()) == 1:
+        pressure_gas = CP.PropsSI('P','D',rho_gas_no_vapor,
+                                      'T', t_cavern,create_CP_gas_string(fluid))
+    else:
+        _find_pressure_from_rho_T(fluid, rho_gas_no_vapor, t_cavern)
+        pressure_gas = fluid.p()
+
+    (pressure_brine,
+     solubility_brine,
+     rho_brine_with_salt) = brine_average_pressure(fluid,water,
+                                                   height_total,
+                                                   height_brine,
+                                                   t_brine)
+
+    fluid.update(CP.PT_INPUTS, pressure_gas, t_cavern)
+    water.update(CP.PT_INPUTS, pressure_brine, t_brine)
+
+    if return_vapor_variables:
+        return mass_vapor, rho_vapor, h_vapor_1, p_vapor, h_evaporate
+
+    else:
+        return water.rhomass() - rho_brine
+
 
 def calculate_cavern_pressure(fluid,
                               m_cavern,
@@ -553,62 +595,14 @@ def calculate_cavern_pressure(fluid,
                               area,
                               volume_cavern_estimate):
 
-
-
-
-    def conservation_of_volume(vol_cavern, return_vapor_variables=False):
-
-        volume_liquid_brine = volume_total - vol_cavern
-        height_brine = volume_liquid_brine / area
-        height_cavern = vol_cavern / area
-        height_total = volume_total / area
-
-        (mass_vapor, rho_vapor, h_vapor_1, p_vapor, h_evaporate) = (
-            evaporation_energy(water,
-                               t_cavern,
-                               t_brine,
-                               vol_cavern))
-
-
-        rho_gas_no_vapor = m_cavern.sum() / vol_cavern
-        rho_brine = m_brine / volume_liquid_brine
-
-        if len(fluid.fluid_names()) == 1:
-            pressure_gas = CP.PropsSI('P','D',rho_gas_no_vapor,
-                                          'T', t_cavern,create_CP_gas_string(fluid))
-        else:
-            _find_pressure_from_rho_T(fluid, rho_gas_no_vapor, t_cavern)
-            pressure_gas = fluid.p()
-
-        (pressure_brine,
-         solubility_brine,
-         rho_brine_with_salt) = brine_average_pressure(fluid,water,
-                                                       height_total,
-                                                       height_brine,
-                                                       t_brine)
-
-        fluid.update(CP.PT_INPUTS, pressure_gas, t_cavern)
-        water.update(CP.PT_INPUTS, pressure_brine, t_brine)
-
-        if return_vapor_variables:
-            return mass_vapor, rho_vapor, h_vapor_1, p_vapor, h_evaporate
-
-        else:
-            return water.rhomass() - rho_brine
-
-    volume_cavern = fsolve(conservation_of_volume, volume_cavern_estimate)
+    cavern_gas_volume = fsolve(conservation_of_volume, volume_cavern_estimate, 
+                           args=(volume_total, area, water, t_cavern, 
+                               t_brine, m_cavern, m_brine, fluid))
 
     pressure_gas_novapor = fluid.p()
-    rho_gas_novapor = fluid.rhomass()
-    pressure_brine = water.p()
-    rho_brine = water.rhomass()
 
-    (mass_vapor, rho_vapor, h_vapor_1,
-     p_vapor, h_evaporate) = conservation_of_volume(volume_cavern,True)
 
-    return (pressure_gas_novapor, rho_gas_novapor, pressure_brine,
-            rho_brine, volume_cavern, mass_vapor, rho_vapor,
-            h_vapor_1, p_vapor, h_evaporate)
+    return pressure_gas_novapor, cavern_gas_volume
 
 def calculate_component_masses(fluid,mass):
     return np.array(fluid.get_mass_fractions()) * mass

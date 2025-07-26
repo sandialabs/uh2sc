@@ -195,9 +195,15 @@ class TestBasics(unittest.TestCase):
 
         for fname in os.listdir(dir_):
             if fname[-4:] == ".yml":
-                with open(os.path.join(dir_,fname), encoding='utf-8') as infile:
+                fpathname = os.path.join(dir_,fname)
+                with open(fpathname, encoding='utf-8') as infile:
                     input_ = yaml.load(infile, Loader=yaml.FullLoader)
-                assert validator.validation(input_)
+                try:
+                    validator.validation(input_)
+                except Exception as exc:
+                    assert False, f"The testing file {infile} is not a valid uh2sc "
+                    +"file and needs to be fixed! Here is the Exception: {exc}"
+
 
 
 if __name__ == "__main__":

@@ -15,14 +15,11 @@ from uh2sc.abstract import AbstractComponent
 from uh2sc.utilities import (calculate_component_masses, 
                              calculate_cavern_pressure,
                              brine_average_pressure,
-                             evaporation_energy)
+                             conservation_of_volume)
 from uh2sc.constants import Constants
-from uh2sc.thermodynamics import (density_of_brine_water, 
-                                  solubility_of_nacl_in_h2o)
 from uh2sc.ghe import ImplicitEulerAxisymmetricRadialHeatTransfer
 from uh2sc.well import Well
 from uh2sc.transport import natural_convection_nu_vertical
-from matplotlib import pyplot as plt
 
 
 const = Constants()
@@ -201,10 +198,7 @@ class SaltCavern(AbstractComponent):
                                              self._height_total,
                                              self._height_brine,
                                              self._t_brine)
-        
-        
-        
-
+        self._p_brine_m1 = self._p_brine
         self._m_brine = self._vol_brine * rho_brine
         self._m_brine_m1 = self._m_brine
         self._m_cavern = calculate_component_masses(self._fluid,
@@ -338,16 +332,8 @@ class SaltCavern(AbstractComponent):
         # DEPENDENT VARIABLES -- AVOID STORING IN self since these must
         # be derived from the independent variables above
         #----------------
-        (p_cavern_novapor, 
-         rho_cavern_novapor, 
-         p_brine, 
-         rho_brine, 
-         vol_cavern, 
-         mass_vapor, 
-         rho_vapor, 
-         h_vapor, 
-         p_vapor, 
-         h_evaporate) = calculate_cavern_pressure(fluid,
+        (p_cavern_novapor,  
+         vol_cavern) = calculate_cavern_pressure(fluid,
                                       m_cavern,
                                       t_cavern,
                                       water,
@@ -356,25 +342,53 @@ class SaltCavern(AbstractComponent):
                                       self._VOL_TOTAL,
                                       self._area_horizontal,
                                       cavern_volume_estimate)
-                                                
-        (p_cavern_novapor_m1, 
-         rho_cavern_novapor_m1, 
-         p_brine_m1, 
-         rho_brine_m1, 
-         vol_cavern_m1, 
-         mass_vapor_m1, 
-         rho_vapor_m1, 
-         h_vapor_m1, 
-         p_vapor_m1, 
-         h_evaporate_m1) = calculate_cavern_pressure(fluid_m1,
-                                      m_cavern_m1,
-                                      t_cavern_m1,
-                                      water_m1,
-                                      m_brine_m1,
-                                      t_brine_m1,
-                                      self._VOL_TOTAL,
-                                      self._area_horizontal,
-                                      cavern_volume_estimate)
+        
+        rho_cavern_novapor = fluid.rhomass()
+        p_brine = water.p()
+        rho_brine = water.rhomass()
+
+        (mass_vapor, rho_vapor, h_vapor,
+         p_vapor, h_evaporate) = conservation_of_volume(vol_cavern,
+             self._VOL_TOTAL, self._area_horizontal, water, t_cavern, 
+             t_brine, m_cavern, m_brine, fluid,True)
+                                                        
+        # unpack previous time step. (don't run calculate cavern_pressure again
+        # because it is expensive!)
+        p_cavern_no_vapor_m1 = self._p_cavern_m1 
+        p_brine_m1 = self._p_brine_m1
+        vol_cavern_m1 = self._vol_cavern_m1
+        
+        fluid_m1.update(CP.PT_INPUTS,p_cavern_no_vapor_m1,t_cavern_m1)
+        
+        #rho_cavern_novapor_m1 = fluid_m1.rhomass()
+        
+        water_m1.update(CP.PT_INPUTS,p_brine_m1,t_brine_m1)
+        rho_brine_m1 = water_m1.rhomass()
+        
+        (mass_vapor_m1, rho_vapor_m1, h_vapor_m1,
+         p_vapor_m1, h_evaporate_m1) = conservation_of_volume(vol_cavern_m1,
+             self._VOL_TOTAL, self._area_horizontal, water_m1, t_cavern_m1, 
+             t_brine_m1, m_cavern_m1, m_brine_m1, fluid_m1,True)
+        
+        # # this is the old code that works but is much slower.
+        # (p_cavern_novapor_m1, 
+        #  rho_cavern_novapor_m1, 
+        #  p_brine_m1, 
+        #  rho_brine_m1, 
+        #  vol_cavern_m1, 
+        #  mass_vapor_m1, 
+        #  rho_vapor_m1, 
+        #  h_vapor_m1, 
+        #  p_vapor_m1, 
+        #  h_evaporate_m1) = calculate_cavern_pressure(fluid_m1,
+        #                               m_cavern_m1,
+        #                               t_cavern_m1,
+        #                               water_m1,
+        #                               m_brine_m1,
+        #                               t_brine_m1,
+        #                               self._VOL_TOTAL,
+        #                               self._area_horizontal,
+        #                               cavern_volume_estimate)
 
         mass_change_vapor = mass_vapor - mass_vapor_m1
         avg_h_evap = (h_evaporate + h_evaporate_m1)/2                                             
@@ -728,6 +742,8 @@ class SaltCavern(AbstractComponent):
 #        self._t_brine_wall_m1 = self._t_brine_wall
         self._m_cavern_m1 = self._m_cavern
         
+        
+        
         (del_vol_brine,mass_vapor,
                 vol_cavern,
                 vol_brine,
@@ -736,6 +752,8 @@ class SaltCavern(AbstractComponent):
                 p_cavern,
                 e_brine,
                 e_cavern) = self.evaluate_residuals(get_independent_vars=True)
+        
+        self._p_brine_m1 = p_brine
         
         # shift the composition of the gas fluid
         total_mass = self._m_cavern.sum()
