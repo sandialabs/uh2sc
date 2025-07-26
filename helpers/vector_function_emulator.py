@@ -5,6 +5,7 @@ from sklearn.utils import shuffle
 from sklearn.model_selection import train_test_split
 from joblib import Parallel, delayed
 from CoolProp import AbstractState
+import CoolProp as CP
 # Example usage:
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error
@@ -122,16 +123,18 @@ class CavernPressureEmulator(VectorFunctionEmulator):
         try:
             fluid = AbstractState("HEOS", "Methane&Ethane")
             water = AbstractState("HEOS", "Water")
+            water.update(CP.PT_INPUTS,101325,t_brine)
             fluid.set_mass_fractions([x[0], 1-x[0]])
+            volume_cavern_estimate = volume_total - m_brine/water.rhomass()
             return calculate_cavern_pressure(fluid,
-                                             m_cavern*x[1],
-                                             t_cavern + x[2],
+                                             x[1], #m_cavern
+                                             x[2], #t_cavern
                                              water,
-                                             m_brine*x[3],
-                                             t_brine + x[4],
-                                             volume_total*x[5],
-                                             area*x[6],
-                                             1000)
+                                             x[3], #m_brine
+                                             x[4], #t_brine
+                                             x[5], #volume_total
+                                             x[6], #area
+                                             volume_cavern_estimate)
         except Exception as e:
             print(f"Error calculating cavern pressure for x={x}: {e}")
             return None
@@ -185,7 +188,7 @@ bounds = [(0, 1),  # mass fraction of the first component
                   (10,area)]
 
 emulator = CavernPressureEmulator(RandomForestRegressor(), bounds)
-X, y = emulator.generate_dataset(1000, m_cavern, t_cavern, m_brine, t_brine, volume_total, area, parallel=False)
+X, y = emulator.generate_dataset(100, m_cavern, t_cavern, m_brine, t_brine, volume_total, area, parallel=False)
 X_train, X_test, y_train, y_test = emulator.split_dataset(X, y)
 emulator.train_model(X_train, y_train)
 score = emulator.evaluate_model(X_test, y_test)
