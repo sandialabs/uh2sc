@@ -1,16 +1,16 @@
 cavern:
-  depth: 1000.0 # meters
+  depth: 914.4 # meters
   overburden_pressure: 19829198.656747766 # Pascal:  Approximately 1000 m deep overburden pressure
   height: 304.8 # meters
-  diameter: 25.76033180350307 # meters
-  ghe_name: nielson_ghe
+  diameter: 25.69 # meters
+  ghe_name: nieland_ghe
   emissivity: 0.99
 wells:  # an arbitrary number of wells can be defined that can pull and push different gasses into the well simultaneously
         # each well can have multiple pipes such that a single well can inject and withdraw at the same time.
   cavern_well:
     ideal_pipes: true  # override everything else such that there are no energy losses along the pipes.
-    control_volume_length: 1304.8 # MUST BE THE SAME AS PIPE LENGTHS FOR THE CURRENT VERSION!
-    pipe_lengths: [1304.8] # meters must be
+    control_volume_length: 1066.8 # MUST BE THE SAME AS PIPE LENGTHS FOR THE CURRENT VERSION!
+    pipe_lengths: [1066.8] # meters must be
     pipe_diameters: [0.0,0.0,0.1,0.12] # meters
     pipe_thermal_conductivities: [45] # W/m/K
     pipe_roughness_ratios: [0.000]  # ratio of pipe diameter to roughness height
@@ -18,15 +18,15 @@ wells:  # an arbitrary number of wells can be defined that can pull and push dif
     valves: # must have same number of valves as pipe_lengths (every pipe ends in a valve)
       inflow_mdot:
         type: "mdot"
-        time: [0,876000,876000.01,2628000,2628000.01,3504000,3504000.01,5256000,5256000.01,6132000,6132000.01,7884000,7884000.01,8760000,8760000.01,10512000,10512000.01,11388000,11388000.01,13140000,13140000.01,14016000,14016000.01,15768000,15768000.01,16644000,16644000.01,18396000,18396000.01,19272000,19272000.01,21024000,21024000.01,21900000,21900000.01,23652000,23652000.01,24528000,24528000.01,26280000,26280000.01,27156000,27156000.01,28908000,28908000.01,29784000,29784000.01,31536000]
-        mdot: [-1.484567,-1.484567,0.7422835,0.7422835,-1.484567,-1.484567,0.7422835,0.7422835,-1.484567,-1.484567,0.7422835,0.7422835,-1.484567,-1.484567,0.7422835,0.7422835,-1.484567,-1.484567,0.7422835,0.7422835,-1.484567,-1.484567,0.7422835,0.7422835,-1.484567,-1.484567,0.7422835,0.7422835,-1.484567,-1.484567,0.7422835,0.7422835,-1.484567,-1.484567,0.7422835,0.7422835,-1.484567,-1.484567,0.7422835,0.7422835,-1.484567,-1.484567,0.7422835,0.7422835,-1.484567,-1.484567,0.7422835,0.7422835]
+        time: [0, 10368000, 10368000.01, 31104000]
+        mdot: [-0.1189370698725589, -0.1189370698725589, 0.05946853493627945, 0.05946853493627945]
         reservoir:
           pressure: 20000000.0
-          temperature: 310.92777777777777775
+          temperature: 310.93
           fluid: 'H2' # Though you can make any mixture of gasses here, read CoolProp's documentation. You can get completely unrealistic results with untested arbitrary mixtures of fluid!!!
                       # http://www.coolprop.org/fluid_properties/Mixtures.html#binary-pairs WARNING IN CoolProp:
 ghes:
-  nielson_ghe:
+  nieland_ghe:
     distance_to_farfield_temp: 600.0 # meters - calibration term
     density: 2162.4925554846 # kg/m3 salt density
     farfield_temperature: 317.5944444444444 # Kelvin
@@ -39,17 +39,17 @@ ghes:
       Qend: 0.0
     number_elements: 50
 initial:  #
-  temperature: 326.5
-  pressure: 9000000.0 #Pascal
+  temperature: 326.3
+  pressure: 17023743.5813687 #Pascal
   fluid: "H2"
   start_date: "2023-01-01" # Must be in iso format "YYYY-MM-DD"
   liquid_height: 1.0 # in meters
   liquid_temperature: 322.5 # ussually 2-4 C cooler than the gas
 calculation:
   time_step: 86400 # seconds - 1 day time steps
-  end_time: 31536000 #3456000 #
+  end_time: 31104000 #3456000 #
   run_parallel: false
 heat_transfer:
   h_inner: "calc" # can enter a constant value if needed.
-  h_cavern_brine: 100 # eventually a model is needed for this 
+  h_cavern_brine: 100 # eventually a model is needed for this
                       # as a function of Rayleigh number!

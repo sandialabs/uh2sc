@@ -13,34 +13,34 @@ from CoolProp import CoolProp as CP
 con = Constants()
 
 
-def density_of_brine_water(temperature_K: float, pressure_Pa: float, 
+def density_of_brine_water(temperature_K: float, pressure_Pa: float,
                            salt_weight_percent: float,
                            density_pure_water: float,
-                           pub="Numbere_etal_1977"): 
-    
+                           pub="Numbere_etal_1977"):
+
     if pub == "Numbere_etal_1977":
     # D. Numbere, W.E. Brigham, and M.B. Standing. 1977. "Correlations for
     # Physical Properties of Petroleum Reservoir Brines" Stanford University
-    # Petroleum Research Institute" November Standford, CA. 
+    # Petroleum Research Institute" November Standford, CA.
     # https://www.osti.gov/servlets/purl/6733264
-    
+
         temperature_F = temperature_K / con.rankine_2_kelvin['value'] - con.f_r_offset['value']
         pressure_psi = con.pa_2_psi['value'] * pressure_Pa
-        
+
         if temperature_F < 0 or temperature_F > 400:
             raise ValueError("The valid temperature range is 0 to 400F")
         elif pressure_psi < 14 or pressure_psi > 1.0e4:
             raise ValueError("The valid pressure range is 14 (1atm) to 10,000psi!")
         elif salt_weight_percent < 0 or salt_weight_percent > 30: # allow maximum solubility values!
             raise ValueError("The valid salt weight percent range is 0 to 25%")
-            
+
         cs = salt_weight_percent
         temp = temperature_F
         pres = pressure_psi
-        
-        
-        return density_pure_water * (cs * (7.65e-3 -1.09e-7 * pres + 
-            cs *(2.16e-5 +1.74e-9 * pres)-(1.07e-5 - 3.24e-10*pres)*temp + 
+
+
+        return density_pure_water * (cs * (7.65e-3 -1.09e-7 * pres +
+            cs *(2.16e-5 +1.74e-9 * pres)-(1.07e-5 - 3.24e-10*pres)*temp +
             (3.76e-8-1.0e-12*pres)*temp**2) + 1)
 
 def solubility_of_nacl_in_h2o(temperature_K: float):
@@ -50,11 +50,11 @@ def solubility_of_nacl_in_h2o(temperature_K: float):
    # ompounds-water-temperature?srsltid=AfmBOoojvIACeaEc-6cpTNmu96FdF37mv-ti2F9JOH72bmfOfZbmSTAm
    # 0.0     20      40      60      80     100    Content at 20C in %  solubility in g/100g  density
    #35.6	35.8	36.42	37.05	38.05	39.2	26.4  1.201
-   
+
    Data source 2
    #
-   
-   http://www.chlorates.exrockets.com/nacl.html						
+
+   http://www.chlorates.exrockets.com/nacl.html
 Temperature Ñ”F	Temperature Ñ”C	%Salt	log T(K)			Error (%)
 -6	-21.11	23.31	2.401210926	23.31	27.85833514	19.51237725
 0	-17.78	23.83	2.406914704	23.83	27.26444018	14.41225421
@@ -80,12 +80,12 @@ Temperature Ñ”F	Temperature Ñ”C	%Salt	log T(K)			Error (%)
 Fit is just for > 0C data
 R² = 9.995934087841450E-01
 and largest error is 0.114%
-   
-   
+
+
    """
    if temperature_K < 273 or temperature_K > 381.85:
        raise ValueError("Temperature must be between 273K and 381.85K")
-   
+
    coef = np.array([3.172251803710940E+06,
                     -4.764736792489000E+07,
                     2.981692711541820E+08,
@@ -93,12 +93,15 @@ and largest error is 0.114%
                     1.867767632899880E+09,
                     -1.869644298615200E+09,
                     7.797370187705370E+08],dtype=np.float64)
-   
+
    return np.polyval(coef,np.log10(temperature_K))
-   
-   
+
+
 def brine_saturated_pressure(temperature_K, salt_weight_percent:float, water: float):
     """
+    THIS FUNCTION IS NO LONGER USED. IT STOPPED WORKING FOR AN UNKNOWN REASON
+    IT WILL NEED TO BE RE-INCORPORATED INTO TESTING IF IT STOPS WORKING.
+
     Geral L. Dittman 1977. "Calculation of Brine Properties." February Lawrence
     Livermore National Laboratories. https://www.osti.gov/servlets/purl/7111583
 
@@ -109,27 +112,27 @@ def brine_saturated_pressure(temperature_K, salt_weight_percent:float, water: fl
     salt_weight_percent : float
         DESCRIPTION.
     water : CoolProp AbstractState object
-        
+
 
     Returns
     -------
     float
         Saturated vapor pressure of saline water with "salt_weight_percent" and
-        temperature_K 
+        temperature_K
 
     """
     Tcurrent = water.T()
     Pcurrent = water.p()
     water.update(CP.QT_INPUTS, 1.0, Tcurrent)
     psat = water.p()
-    
+
     # return to the state before calling this function.
     water.update(CP.PT_INPUTS, Pcurrent, Tcurrent)
-    
+
     # the last point is extrapolated. the data goes to 25%
     a1_data = np.array([0.969,0.934,0.894,0.847,0.794,0.794+(0.749-0.847)/5])
     xs_data = np.array([5,10,15,20,25,30])
-    
+
     a1 = np.interp(salt_weight_percent, xs_data, a1_data)
-    
+
     return a1 * psat

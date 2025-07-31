@@ -44,6 +44,31 @@ cavern:
       min: 0.0
       required: true
       type: number
+    max_operational_temperature:
+      max: 370
+      min: 300
+      required: false
+      type: number
+    min_operational_temperature:
+      max: 340
+      min: 280
+      required: false
+      type: number
+    max_operational_pressure_ratio:
+      max: 1.0
+      min: 0.1
+      required: false
+      type: number
+    min_operational_pressure_ratio:
+      max: 1.0
+      min: 0.1
+      required: false
+      type: number
+    max_volume_change_per_day:
+      max: 2.0
+      min: 0.0
+      required: false
+      type: number
     ghe_name:
       type: string
       required: false #perfectly insulated if none exists.

@@ -46,13 +46,13 @@ class Well(AbstractComponent):
         """
         CP - cool props object
         """
-        self._NUM_EQN = 5
+        self._NUM_EQN = 4 + model.number_fluids
         self._gindices = global_indices
         self.input = well_dict
         self._model = model
         self._name = well_name
         
-        self._number_fluids = len(model.fluids['cavern'].fluid_names())
+        self._number_fluids = model.number_fluids
         
         
         P0 = model.inputs['initial']['pressure']
@@ -156,7 +156,7 @@ class Well(AbstractComponent):
         return "Well"
 
 
-    def evaluate_residuals(self,x=None):
+    def evaluate_residuals(self,x=None,get_independent_vars=False):
         """
         Must first evaluate all interface equations for indices produced by interface_var_ind_prev_comp
 
@@ -170,6 +170,8 @@ class Well(AbstractComponent):
         Args:
             x numpy.array : global x vector for the entire
                              differiental/algebraic system
+            get_independent_vars bool : enables collecting variables that
+                             are otherwise unexposed. (NOT CURRENTLY USED)
                              
                 
         This is a dynamic ODE implicit solution via euler integration
@@ -642,7 +644,14 @@ class VerticalPipe(object):
         delh = self.len_p_cv
         grav = const.g['value']
 
-        if mass_rate0 > 0:
+        if isinstance(mass_rate0,(float,int)):
+            inflow = mass_rate0 > 0
+        elif isinstance(mass_rate0,np.ndarray):
+            inflow = mass_rate0.sum() > 0
+        else:
+            raise ValueError("mdot must be an array or numeric!")
+            
+        if inflow > 0:
             flow_into_cavern = True
             cv_n = 0
             sign = 1

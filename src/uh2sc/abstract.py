@@ -54,7 +54,7 @@ class AbstractComponent(ABC):
         pass
 
     @abstractmethod
-    def evaluate_residuals(self,x=None):
+    def evaluate_residuals(self,x=None, get_independent_vars=False):
         """
         Must first evaluate all interface equations for indices produced by interface_var_ind_prev_comp
 
@@ -62,7 +62,7 @@ class AbstractComponent(ABC):
 
 
         Args:
-            xg numpy.array : global x vector for the entire
+            x numpy.array : global x vector for the entire
                              differiental/algebraic system
         """
         pass

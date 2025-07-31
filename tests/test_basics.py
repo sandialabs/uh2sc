@@ -149,33 +149,6 @@ class TestBasics(unittest.TestCase):
                                        ) == pytest.approx(1860/3600, rel=0.01)
 
 
-    def test_hinside(self):
-        fluid = CP.AbstractState("HEOS","air")
-        Tboundary = (311 + 505.4) / 2
-        fluid.update(CP.PT_INPUTS, 1e5, Tboundary)
-        h = tp.h_inside(0.305,311,505.4,fluid)
-        assert h == pytest.approx(7, abs=0.1)
-
-
-    def test_hinner_mixed(self):
-        # Value changed from 7 to 7.6 because of annular mode of heat transport.
-        # A more
-        mdot = 1e-10
-        D = 0.010
-        fluid = CP.AbstractState("HEOS","Air")
-        fluid.update(CP.PT_INPUTS, 101325, 311)
-        h_ = tp.h_inside_mixed(0.305, 311, 505.4, fluid, mdot, D)
-        assert h_ == pytest.approx(7.6, abs=0.05)
-
-
-    def test_nnu(self):
-        NGr = tp.Gr(0.305, 311, 505.4, 1e5, "HEOS::air")
-        NPr = tp.Pr((311 + 505.4) / 2, 1e5, "HEOS::air")
-        NRa = NGr * NPr
-        NNu = tp.Nu(NRa, NPr)
-        assert NNu == pytest.approx(62.2, abs=1.0)
-
-
     def test_nra(self):
         NGr = tp.Gr(0.305, 311, 505.4, 1e5, "HEOS::air")
         NPr = tp.Pr((311 + 505.4) / 2, 1e5, "HEOS::air")

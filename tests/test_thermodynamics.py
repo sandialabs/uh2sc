@@ -3,7 +3,7 @@
 """
 Created on Wed Mar 26 21:57:33 2025
 
-This is a place holder for comparing literature based data of gas mixtures 
+This is a place holder for comparing literature based data of gas mixtures
 vs CoolProps output since gas mixtures can have inaccurate outputs.
 
 @author: dlvilla
@@ -11,7 +11,7 @@ vs CoolProps output since gas mixtures can have inaccurate outputs.
 import unittest
 
 from CoolProp import CoolProp as CP
-from uh2sc.thermodynamics import (density_of_brine_water, 
+from uh2sc.thermodynamics import (density_of_brine_water,
                                   solubility_of_nacl_in_h2o,
                                   brine_saturated_pressure)
 
@@ -31,31 +31,32 @@ class TestThermodynamics(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         pass
-    
-    
+
+
     def test_saline_density(self):
 
-        
+
         pure_water_density = self.water.rhomass()
-        
+
         saline_density = density_of_brine_water(373, 16e6, 25, pure_water_density)
-        
+
         ratio = saline_density/pure_water_density
         self.assertAlmostEqual(1.1879567860089, ratio)
-        
+
     def test_salt_solubility(self):
-        
+
         sol = solubility_of_nacl_in_h2o(104.44+273)
         self.assertAlmostEqual(sol, 28.279825925827026)
-        
+
+    @unittest.skip("brine_saturated_pressure is not longer used but may be useful in the future.")
     def test_brine_saturated_pressure(self):
         pb_sat = brine_saturated_pressure(293,25,self.water)
         self.assertAlmostEqual(pb_sat, 1840.229586272883)
-        
-        
-        
-        
-    
+
+
+
+
+
 if __name__ == "__main__":
     PROFILE = False
 

@@ -34,3 +34,6 @@ class FluidMixtureStateInfeasibleInCoolProp(ValueError):
 
 class FluidMixturePresTempNotValid(ValueError):
     pass
+
+class CavernStateOutOfOperationalBounds(ValueError):
+    pass

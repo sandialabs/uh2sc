@@ -8,7 +8,7 @@ import numpy as np
 
 from CoolProp import CoolProp as CP
 from uh2sc.abstract import AbstractComponent, ComponentTypes
-from uh2sc.utilities import calculate_cavern_pressure
+from uh2sc.utilities import calculate_cavern_pressure, conservation_of_volume
 
 
 class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
@@ -147,7 +147,7 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
         self.Tgvec_m1 = self.Tgvec
         
 
-    def evaluate_residuals(self, x=None):
+    def evaluate_residuals(self, x=None, get_independent_vars=False):
         """
         This is a dynamic ODE implicit solution via euler integration
 
@@ -168,11 +168,14 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
 
 
         Inputs:
-            Variables:
-            Local Index 0 = Q0 - flux into the system
-            Local Inices 1 to num_element + 2 Tgvec:
-                vector of ground temperatures spaced radially from the GSHX
-            Local Index Qend - flux out of the system (ussually fixed to 0.0)
+            x np.ndarray : list of variables below
+                Variables:
+                Local Index 0 = Q0 - flux into the system
+                Local Inices 1 to num_element + 2 Tgvec:
+                    vector of ground temperatures spaced radially from the GSHX
+                Local Index Qend - flux out of the system (ussually fixed to 0.0)
+            get_independent_vars bool : enables collecting variables not
+                    normally output. (NOT IN USE HERE YET)
 
         Parameters:
 
@@ -274,31 +277,53 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
             t_cavern_wall = xg[cgind[0]+1]
             m_brine = xg[cgind[0] + 2]
             t_brine = xg[cgind[0]+3]
-            t_brine_wall = xg[cgind[0]+4]
             fluid = cavern._fluid
             water = cavern._water
             
             m_cavern = xg[cgind[1]-cavern._number_fluids+1:cgind[1]+1]
             
             
-            (p_cavern, 
-             rho_cavern, 
-             p_brine, 
-             rho_brine, 
-             vol_cavern,
-             mass_vapor,
-             rho_vapor,
-             h_vapor,
-             p_vapor,
-             h_evaporate) = calculate_cavern_pressure(fluid,
-                                          m_cavern,
-                                          t_cavern,
-                                          water,
-                                          m_brine,
-                                          t_brine,
-                                          cavern._VOL_TOTAL,
-                                          cavern._area_horizontal,
-                                          cavern._VOL_TOTAL - cavern._initial_volume_brine)
+            # (p_cavern, 
+            #  rho_cavern, 
+            #  p_brine, 
+            #  rho_brine, 
+            #  vol_cavern,
+            #  mass_vapor,
+            #  rho_vapor,
+            #  h_vapor,
+            #  p_vapor,
+            #  h_evaporate) = calculate_cavern_pressure(fluid,
+            #                               m_cavern,
+            #                               t_cavern,
+            #                               water,
+            #                               m_brine,
+            #                               t_brine,
+            #                               cavern._VOL_TOTAL,
+            #                               cavern._area_horizontal,
+            #                               cavern._VOL_TOTAL - cavern._initial_volume_brine)
+            try:
+                cavern_volume_estimate = cavern._VOL_TOTAL - cavern._initial_volume_brine
+                (p_cavern,  
+                 vol_cavern) = calculate_cavern_pressure(fluid,
+                                              m_cavern,
+                                              t_cavern,
+                                              water,
+                                              m_brine,
+                                              t_brine,
+                                              cavern._VOL_TOTAL,
+                                              cavern._area_horizontal,
+                                              cavern_volume_estimate)
+            except:
+                breakpoint()
+            
+            p_brine = water.p()
+
+            (mass_vapor, rho_vapor, h_vapor,
+             p_vapor, h_evaporate) = conservation_of_volume(vol_cavern,
+                 cavern._VOL_TOTAL, cavern._area_horizontal, water, t_cavern, 
+                 t_brine, m_cavern, m_brine, fluid, True)  
+                                                      
+            
             
             vol_brine = cavern._VOL_TOTAL - vol_cavern                                              
             mass_frac = m_cavern / m_cavern.sum()

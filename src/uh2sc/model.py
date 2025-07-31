@@ -4,8 +4,10 @@ from copy import deepcopy
 from warnings import warn
 import numpy as np
 import logging
+import yaml
 
 from matplotlib import pyplot as plt
+import pandas as pd
 
 import CoolProp.CoolProp as CP
 
@@ -46,7 +48,7 @@ class Model(AbstractComponent):
      surface pipes and may include pumps/compressors.
     """
 
-    def __init__(self,inp,single_component_test=False,solver_options={},**kwargs):
+    def __init__(self,inp,single_component_test=False,solver_options=None,**kwargs):
 
         """
         Construct a combined model of 1) a salt cavern, 2) an arbitrary number
@@ -62,8 +64,25 @@ class Model(AbstractComponent):
                             dict = dict that conforms to the uh2sc schema
 
         """
+        if solver_options is None:
+            solver_options = {"TOL": 1.0e-2}
+            
         self.converged_solution_point = False
         self.inputs = self._read_input(inp)
+        if isinstance(inp,str):
+            self.input_file = inp
+        else:
+            self.input_file = None
+        time_step = self.inputs["calculation"]["time_step"]
+        
+        nstep = int(self.inputs["calculation"]["end_time"]
+                    / time_step
+                    + 1)
+        self._end_time = self.inputs["calculation"]["end_time"]
+        self._max_time_step = time_step
+        self._min_time_step = 100
+        self.time = 0.0
+        self.time_step = self._max_time_step
         
         self.test_inputs = kwargs
         if len(kwargs) != 0:
@@ -100,17 +119,73 @@ class Model(AbstractComponent):
 
         self.solver = NewtonSolver(solver_options)
 
-        time_step = self.inputs["calculation"]["time_step"]
-        
-        nstep = int(self.inputs["calculation"]["end_time"]
-                    / time_step
-                    + 1)
-        self._end_time = self.inputs["calculation"]["end_time"]
-        self._max_time_step = time_step
-        self._min_time_step = 100
-        self.time = 0.0
-        self.time_step = self._max_time_step
+
         self._solutions = {}
+        
+        self.evaluate_residuals(get_independent_vars=True)
+        
+        # used for analytics to assure variables in the model are realistic
+        # with respect to actual salt cavern gas dynamics.
+        self.components['cavern']._analytics()
+
+    def _form_array(self):
+        """
+        Create a numpy array and column names
+        
+        """
+        keys = np.array(list(self._solutions.keys()))
+        values = np.array(list(self._solutions.values()))
+        column_names = self.xg_descriptions
+        column_names = ["Time (s)"] + column_names
+        out_arr = np.concat([keys.reshape([len(keys),1]),values],axis=1)
+        return column_names, out_arr
+    
+    def write_results(self,filename="uh2sc_results.csv"):
+        """
+        
+        Write out results as a CSV
+        
+        """
+        column_names, out_arr = self._form_array()
+        np.savetxt(filename, out_arr, header=",".join(column_names), delimiter=',')
+    
+    @property
+    def dataframe(self, relative_time=False):
+        """
+        Provide results as a dataframe
+        
+        Inputs:
+        =======
+        
+        relative_time: bool: optional : Default =False
+              If True, then time is just a value equal to
+              the number of seconds since the simulation began
+              If False, then the index is based on date-time stamps.
+        
+        """
+        # get the results
+        column_names, out_arr = self._form_array()
+        start_date_str = self.inputs['initial']['start_date']
+        time_step = self.inputs['calculation']['time_step']
+        end_time = self.inputs['calculation']['end_time']
+
+        # process for dataframe considerations        
+        if relative_time:
+            index = range(0, end_time + time_step, time_step)
+        else:
+            # date considered.
+            start_date = pd.to_datetime(start_date_str)
+            # Calculate the number of time steps
+            num_steps = int(end_time / time_step) + 1
+            
+            # Create a datetime index with the specified time step
+            index = pd.date_range(start=start_date, periods=num_steps, freq=f'{time_step}S')
+        
+        df = pd.DataFrame(out_arr,index=index,columns=column_names)
+        
+        return df
+        
+    
     
     @property
     def solutions(self):
@@ -131,6 +206,8 @@ class Model(AbstractComponent):
         
         """
         if new_inp is not None:
+            raise NotImplemented("The ability to add new input "
+                                 +"has not been completed!")
             self.inputs = self._read_input(new_inp)
             self._validate()
             time_step = self.inputs["calculation"]["time_step"]
@@ -139,20 +216,24 @@ class Model(AbstractComponent):
 
                         / time_step
                         + 1)
-            breakpoint()
+
             for component_name, component in self.components.items():
                 if component.component_type == 'Well':
                     new_well = Well(component_name,new_inp['wells'][component_name],self, component.global_indices)
                     self.components[component_name] = new_well
         
         
-        while self.time <= self._end_time:
+        # record initial state
+        self._solutions[self.time] = deepcopy(self.get_x())
+        
+        while self.time < self._end_time:
             x_org = self.get_x()
 
             logging.info(f"UH2SC model beginning calculations for time={self.time}.")
             # solve the current time step
             
             tup = self.solver.solve(self)
+            
             
             solver_converged = bool(tup[0])
             if solver_converged:
@@ -166,10 +247,13 @@ class Model(AbstractComponent):
                 # update the state of the model
                 self.shift_solution()
                 
+                # shift time
+                self.time += self.time_step
+                
                 # gather the results
                 self._solutions[self.time] = deepcopy(self.get_x())
                 
-                self.time += self.time_step
+                
                 
                 # increase the time step if it has shrunk
                 if self.time_step < self._max_time_step:
@@ -188,7 +272,6 @@ class Model(AbstractComponent):
 
                     
                 else:
-                    breakpoint()
                     msg = tup[1]
                     raise NewtonSolverError("The Newton solver returned an" 
                             +f" error for time {self.time} and the time step has"
@@ -232,7 +315,7 @@ class Model(AbstractComponent):
 
         return xg
 
-    def evaluate_residuals(self,x=None):
+    def evaluate_residuals(self,x=None,get_independent_vars=False):
         residuals = []
         if x is None:
             for _cname, component in self.components.items():
@@ -241,6 +324,9 @@ class Model(AbstractComponent):
                 # local evaluations of residuals
 
                 residuals += list(component.evaluate_residuals())
+                if get_independent_vars:
+                    self.independent_vars = component.evaluate_residuals(
+                        get_independent_vars=get_independent_vars)
 
                 
             return np.array(residuals)
@@ -252,6 +338,10 @@ class Model(AbstractComponent):
                     v_residuals = []
                     for _cname, component in self.components.items():
                         v_residuals += list(component.evaluate_residuals(xv))
+                        if get_independent_vars:
+                            self.independent_vars = component.evaluate_residuals(
+                                x=xv,
+                                get_independent_vars=get_independent_vars)
                     residuals.append(v_residuals)
             elif x.ndim == 1:
                 for _cname, component in self.components.items():
@@ -259,6 +349,10 @@ class Model(AbstractComponent):
                     # this is the single x behavior used by
                     # local evaluations of residuals
                     residuals += list(component.evaluate_residuals(x))
+                    if get_independent_vars:
+                        self.independent_vars = component.evaluate_residuals(
+                            x=x,
+                            get_independent_vars=get_independent_vars)
 
 
 
@@ -392,11 +486,13 @@ class Model(AbstractComponent):
         if not self.is_test_mode:
             # if not, then we are in a test mode.
             find_all_fluids(self)
-            self.num_material = len(self.molar_masses)
-        
+            self.number_fluids = len(self.molar_masses)
+
         if num_caverns != 0:
+            self._bounds_characteristics()
             self._build_cavern(xg_descriptions,xg,components)
             num_var["caverns"] = len(xg_descriptions)
+            
         else:
             num_var["caverns"] = 0
         if num_wells != 0:
@@ -725,7 +821,14 @@ class Model(AbstractComponent):
                     temp_fluid,pres_fluid = temp_vp.initial_adiabatic_static_column(
                         initial_temperature, initial_pressure, mdot)
                     
-                    if mdot > 0.0:
+                    if isinstance(mdot,(float,int)):
+                        inflow = mdot > 0.0
+                    elif isinstance(mdot, np.ndarray):
+                        inflow = mdot.sum() > 0.0
+                    else:
+                        raise ValueError("mdot must be an array or numeric!")
+                    
+                    if inflow:
                     
                         xg += [valve["reservoir"]["temperature"]] 
                         x_desc += ["Valve reservoir temperature (K)"]
@@ -831,7 +934,7 @@ class Model(AbstractComponent):
                 invalid = True
 
         if invalid:
-            raise InputFileError("Error in input file:\n\n" + error_string)
+            raise InputFileError(f"Error in input file {self.input_file}:\n\n" + error_string)
 
     def _read_input(self,inp):
             # enable reading a file or accepting a valid dictionary
@@ -860,6 +963,102 @@ class Model(AbstractComponent):
         if ghe_name == self.inputs["cavern"]["ghe_name"]:
             adj_comp.append(("cavern",self.inputs["cavern"]))
         return adj_comp
+    
+    def _bounds_characteristics(self):
+        """
+        These characteristic pressures and temperatures (which can) be
+        controlled via user inputs provide a way for warnings and then
+        an error to be thrown if the cavern simulation is outside of operational
+        limits.
+        
+        """
+        self._temperature_bounds = {"minor_warning":[None,None],
+                                    "major_warning":[None,None],
+                                    "error":[None,None]}
+        self._pressure_bounds = {"minor_warning":[None,None],
+                                    "major_warning":[None,None],
+                                    "error":[None,None]}
+        self._mass_flow_upper_limit = {"minor_warning":None,
+                                    "major_warning":None,
+                                    "error":None}
+
+        opres = self.inputs['cavern']['overburden_pressure']
+        
+        if "min_operational_temperature" in self.inputs["cavern"]:
+            self._temperature_bounds["minor_warning"][0] = self.inputs["cavern"]["min_operational_temperature"]
+        else:
+            self._temperature_bounds["minor_warning"][0] = 295
+        if "max_operational_temperature" in self.inputs["cavern"]:
+            self._temperature_bounds["minor_warning"][1] = self.inputs["cavern"]["min_operational_temperature"]
+        else:
+            self._temperature_bounds["minor_warning"][1] = 330
+            
+        if "min_operational_pressure_ratio" in self.inputs["cavern"]:
+            self._pressure_bounds["minor_warning"][0] = self.inputs["cavern"]["min_operational_pressure_ratio"]*opres
+        else:
+            self._pressure_bounds["minor_warning"][0] = 0.5*opres
+        if "max_operational_pressure_ratio" in self.inputs["cavern"]:
+            self._pressure_bounds["minor_warning"][1] = self.inputs["cavern"]["max_operational_pressure_ratio"] *opres
+        else:
+            self._pressure_bounds["minor_warning"][1] = 0.8 * opres
+            
+        self._pressure_bounds["major_warning"] = [0.95*self._pressure_bounds["minor_warning"][0],
+                                         1.05 * self._pressure_bounds["minor_warning"][1]]
+        self._pressure_bounds["error"] = [0.9*self._pressure_bounds["minor_warning"][0],
+                                         1.1 * self._pressure_bounds["minor_warning"][1]]
+
+        
+        self._temperature_bounds["major_warning"] = [self._temperature_bounds["minor_warning"][0]-10,
+                                                     self._temperature_bounds["minor_warning"][1]+10]
+        self._temperature_bounds["error"] = [self._temperature_bounds["minor_warning"][0]-20,
+                                                     self._temperature_bounds["minor_warning"][1]+20]
+        
+        # flow limits
+        if "max_volume_change_per_day" in self.inputs["cavern"]:
+            max_vol_fraction = self.inputs["cavern"]["max_volume_change_per_day"]
+        else:
+            max_vol_fraction = 0.1
+        
+        cfl = self.fluids['cavern']
+        
+        temp = cfl.T()
+        pres = cfl.p()
+        
+        
+        cfl.update(CP.PT_INPUTS,self._pressure_bounds["minor_warning"][0],
+                                self._temperature_bounds["minor_warning"][0])
+        
+        # calculate total volume
+        total_volume = 0.25 * np.pi * ((self.inputs['cavern']['diameter']) ** 2
+                                   ) * self.inputs['cavern']['height']
+        
+        mass_min = total_volume * cfl.rhomass()
+        
+        cfl.update(CP.PT_INPUTS,self._pressure_bounds["minor_warning"][1],
+                                self._temperature_bounds["minor_warning"][1])
+        
+        mass_max = total_volume * cfl.rhomass()
+        
+        self.cavern_working_mass = mass_max - mass_min
+        self.cavern_max_mass = mass_max
+        self.cavern_min_mass = mass_min
+        
+        self._mass_flow_upper_limit["minor_warning"] = self.cavern_working_mass * max_vol_fraction / (3600 * 24)
+        self._mass_flow_upper_limit["major_warning"] = 1.05 * self._mass_flow_upper_limit["minor_warning"]
+        self._mass_flow_upper_limit["error"] = 1.1 * self._mass_flow_upper_limit["minor_warning"]
+        
+        cfl.update(CP.PT_INPUTS, pres, temp)
+        
+        self.bounds_checks = [self._temperature_bounds, 
+                              self._pressure_bounds, 
+                              self._mass_flow_upper_limit]
+        
+        
+        
+        
+        
+        
+        
     
 
 

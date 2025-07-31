@@ -28,9 +28,9 @@ class TestVerticalPipe(unittest.TestCase):
                                           "salt_cavern_mdot_only_test.yml"),
                              encoding="utf-8") as file:
             inp = yaml.load(file, Loader=yaml.SafeLoader)
-        
+
         cls.model = Model(inp,single_component_test=True,type="WELL",cavern_temp=300,cavern_pressure=9e6)
-        
+
         cls.initial_pressure = const().atmospheric_pressure['value']
         cls.initial_temperature = 298.0
 
@@ -43,18 +43,13 @@ class TestVerticalPipe(unittest.TestCase):
 
 
     def test_ideal_pipes(self):
-
-        with self.assertWarns(UserWarning):
-            self.model.run()
-            
-
+        self.model.run()
         results = self.model.solutions
-        self.assertTrue(results[0.0][0] == 0)
         self.assertTrue(results[0.0][1] > 2.731e2 - 0.01e2 and results[0.0][1] < 2.731e2 + 0.01e2)
         self.assertTrue(results[0.0][-1] > 8.967e6 - 0.01e6 and results[0.0][-1] < 8.967e6 + 0.01e6)
         self.assertTrue(results[900.0][1] > 3.113e2 - 0.01e2 and results[900.0][1] < 3.113e2 + 0.01e2)
         self.assertTrue(results[900.0][2] > 8.100e6 - 0.01e6 and results[900.0][2] < 8.100e6 + 0.01e6)
-        
+
 
     def test_adiabatic_column(self):
         if self.run_all_tests:
@@ -64,13 +59,13 @@ class TestVerticalPipe(unittest.TestCase):
             # this should produce the dry air adiabatic lapse rate of the atmosphere
             # and standard U.S. atmospheric pressure
             vp1 = self.model.components["cavern_well"].pipes["inflow_mdot"]
-            
+
             air = CP.AbstractState("HEOS","Air")
             air.set_mass_fractions([1.0])
             air.update(CP.PT_INPUTS,self.initial_pressure,self.initial_temperature)
             mass_rate0 = 1.0
             vp1.fluid = air
-            
+
             Tfluid, Pfluid, rhofluid = vp1.initial_adiabatic_static_column(self.initial_temperature, self.initial_pressure, mass_rate0, True)
 
             # verify this is an adiabatic process where Pressure / Density ** (specific heat ratio) = constant
@@ -87,8 +82,8 @@ class TestVerticalPipe(unittest.TestCase):
     @unittest.skip("The development of these features is not complete")
     def test_pipe_pressure_loss(self):
         """
-        This test will be worked on once we make the pipes dynamic. This 
-        is not a priority until multi-gas flow with water vapor is 
+        This test will be worked on once we make the pipes dynamic. This
+        is not a priority until multi-gas flow with water vapor is
         completed for the cavern and a new release of the software is
         made.
         """

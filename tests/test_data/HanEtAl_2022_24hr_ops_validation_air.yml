@@ -1,0 +1,56 @@
+cavern:
+  depth: 300.0 # THIS IS NOT KNOWN!
+  overburden_pressure: 8000000.0 # A guess based on initial pressure.
+  height: 374.316 # meters
+  diameter: 21.9 # Disregarded 20 m radius to enable having the correct volume and surface area
+  ghe_name: nieland_ghe
+  emissivity: 0.99
+  max_volume_change_per_day: 2.0
+wells:  # an arbitrary number of wells can be defined that can pull and push different gasses into the well simultaneously
+        # each well can have multiple pipes such that a single well can inject and withdraw at the same time.
+  cavern_well:
+    ideal_pipes: true  # override everything else such that there are no energy losses along the pipes.
+    control_volume_length: 450 # MUST BE THE SAME AS PIPE LENGTHS FOR THE CURRENT VERSION!
+    pipe_lengths: [450] # meters must be
+    pipe_diameters: [0.0,0.0,0.1,0.12] # meters
+    pipe_thermal_conductivities: [45] # W/m/K
+    pipe_roughness_ratios: [0.000]  # ratio of pipe diameter to roughness height
+    pipe_total_minor_loss_coefficients: [0.0]
+    valves: # must have same number of valves as pipe_lengths (every pipe ends in a valve)
+      inflow_mdot:
+        type: "mdot"
+        time: [0,3600,3600.01,9000.0,9000.01,20160,20160.01,24480,24480.01,33480,33480.01,35280,35280.01,38880,38880.01,44280,44280.01,71280,71280.01,86400]
+        mdot: [-190,-190,0.0,0.0,50.0,50.0,0.0,0.0,-190,-190,0.0,0.0,50.0,50.0,0.0,0.0,50.0,50.0,0.0,0.0]
+        reservoir:
+          pressure: 7200000.0
+          temperature: 323.15
+          fluid: 'Air' # Though you can make any mixture of gasses here, read CoolProp's documentation. You can get completely unrealistic results with untested arbitrary mixtures of fluid!!!
+                      # http://www.coolprop.org/fluid_properties/Mixtures.html#binary-pairs WARNING IN CoolProp:
+ghes:
+  nieland_ghe:
+    distance_to_farfield_temp: 600.0 # meters - calibration term
+    density: 2162.4925554846 # kg/m3 salt density
+    farfield_temperature: 317.5944444444444 # Kelvin
+    heat_capacity: 837.2 #J/kg/K salt heat capacity
+    thermal_conductivity: 5.190311418685122 # W/m/K see https://doi.org/10.1016/j.renene.2021.11.080
+                                            #for examples this is for 100 C
+    modeled_radial_thickness: 1000.0 # hollow cylinder thickness of salt that is modeled
+    initial_conditions:
+      Q0: 0.0
+      Qend: 0.0
+    number_elements: 2
+initial:  #
+  temperature: 313.15
+  pressure: 5900000.0 #Pascal
+  fluid: "Air"
+  start_date: "2023-01-01" # Must be in iso format "YYYY-MM-DD"
+  liquid_height: 1.0 # in meters
+  liquid_temperature: 313.5 # ussually 2-4 C cooler than the gas
+calculation:
+  time_step: 1200 # 20 minute time steps.
+  end_time: 86400 # 1 day of simulation
+  run_parallel: false
+heat_transfer:
+  h_inner: 30.0 # can enter a constant value if needed.
+  h_cavern_brine: 100 # eventually a model is needed for this
+                      # as a function of Rayleigh number!
