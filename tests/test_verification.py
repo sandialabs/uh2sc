@@ -398,7 +398,6 @@ class TestSaltCavernVerification(unittest.TestCase):
                                    model.components['cavern']._m_cavern[1]) 
                                    < 200)
             
-            
 
     
     def test_hanEtAl_air_with_actual_test_data(self):
@@ -415,6 +414,22 @@ class TestSaltCavernVerification(unittest.TestCase):
             model.run()
             
             df = model.dataframe
+            
+            
+            val_data_fnames = {"Pressure Data":"2022_Han_PressureData.csv",
+                               "Model Pressure":"2022-HANEtal_Model_pressure.csv",
+                               "Temperature Data":"2022_Han_TemperatureData_Fig5b.csv",
+                               "Model Temperature":"2022_Han_ModelTemperature_Fig5b.csv"}
+
+            # load the validation data
+            dict_validation = {}
+            for data_name, fname in val_data_fnames.items():
+                val_path = os.path.join(self.filedir,"test_data",fname)
+                dict_validation[data_name] = pd.read_csv(val_path)
+                
+            # HERE IS WHERE I LEFT OFF
+
+            
             
             breakpoint()
             pass

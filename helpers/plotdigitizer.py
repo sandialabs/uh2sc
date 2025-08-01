@@ -935,7 +935,8 @@ class MainApplication:
 
 
 if __name__ == "__main__":
-    image_name = "/Users/dlvilla/Repos/uh2sc/helpers/2022-HanEtAl_Data_PressureFig5a.png"
+    #image_name = "/Users/dlvilla/Repos/uh2sc/helpers/2022-HanEtAl_Data_PressureFig5a.png"
+    image_name = "/Users/dlvilla/Repos/uh2sc/helpers/2022-HanEtAl_Data_TemperatureFig5b.png"
     mainapp = MainApplication(image_name,zoom_window_size=0.0)
     mainapp.show()
     sys.exit(mainapp.app.exec_())

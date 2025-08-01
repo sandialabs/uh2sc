@@ -115,6 +115,8 @@ class Well(AbstractComponent):
                 else:
                     pipe.set_adjacent_pipes(adj_inner_pipe=pipes[idx-1],adj_outer_pipe=pipes[idx+1])
                     
+        
+                    
                 
     @property
     def global_indices(self):
@@ -256,8 +258,15 @@ class Well(AbstractComponent):
                 residuals[_eqn] = pipe.temp_fluid[0] - t_exit[0]
                 _eqn += 1
                 residuals[_eqn] = pipe.pres_fluid[0] - p_exit[0]
+                
+        if get_independent_vars:
+            return () # nothing needed here until the well becomes more complex
         
         return residuals
+    
+    @property
+    def independent_vars_descriptions(self):
+        return []
 
     def equations_list(self):
         e_list = []

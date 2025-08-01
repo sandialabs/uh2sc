@@ -422,9 +422,7 @@ class SaltCavern(AbstractComponent):
         e_vapor_brine = 0.0 # e_vapor * height_brine / height_total
         e_vapor_cavern = e_vapor
         
-        
-        #rho_brine_updated = (m_brine-mass_vapor)/volume_liquid_brine
-        #rho_brine_m1_updated = (m_brine_m1 - mass_vapor_m1)/volume_liquid_brine_m1
+
         # update fluids _m1 is updated in shift_solution as well
         # this has to be updated here because new values for the
         # variables are continuously tried by the NewtonSolver
@@ -434,15 +432,14 @@ class SaltCavern(AbstractComponent):
         
         # Change in brine volume
         del_vol_brine = -mass_change_vapor/rho_brine
-        #del_height_brine = del_vol_brine / self._area_horizontal
     
 
-        
         #enthalpies
         hmass_cavern_m1 = fluid_m1.hmass()
         hmass_cavern = fluid.hmass()
         hmass_brine_m1 = water_m1.hmass()
         hmass_brine = water.hmass()
+        
         
         # total energy of cavern and brine
         e_cavern_m1 = hmass_cavern_m1 * m_cavern_m1
@@ -502,6 +499,8 @@ class SaltCavern(AbstractComponent):
             time = self._model.time
             logging.info(f"Results for salt cavern at time {time} gathered!")
             
+            
+            
             # update global values.
             self._p_cavern = p_cavern_novapor
             self._mdot_cavern = cavern_gas_mass_flow
@@ -517,21 +516,22 @@ class SaltCavern(AbstractComponent):
                         varlist.append(eval(attr))
                     else:
                         varlist.append(time)
-    
-            # if self._model.time > 1000:
-            #     breakpoint()
+
                                                                          
             # PUT ANY VARIABLES YOU WANT TO WRAP INTO shift_solution, or
             # into results timeseries here!
-            return (del_vol_brine,
-                    mass_vapor,
-                    vol_cavern,
-                    volume_liquid_brine,
-                    p_brine,
-                    cavern_vapor_mass_flow,
-                    p_cavern_novapor + p_vapor,
-                    e_brine,
-                    e_cavern)
+            # THIS IS A MESS WITH ARRAYS VS FLOATS, Everything needs to 
+            # be floats
+            return (float(del_vol_brine),
+                    float(mass_vapor),
+                    float(vol_cavern),
+                    float(volume_liquid_brine),
+                    float(p_brine),
+                    float(cavern_vapor_mass_flow),
+                    float(p_cavern_novapor + p_vapor),
+                    float(e_brine),
+                    float(e_cavern),
+                    float(p_cavern_novapor))
             
         
         
@@ -752,6 +752,24 @@ class SaltCavern(AbstractComponent):
             next_comp[ghe_name] = self._model.components[ghe_name]
         return next_comp
         
+    @property
+    def independent_vars_descriptions(self):
+        """
+        You must keep this ordered list the same as what evaluate_residuals
+        returns when  get_independent_vars=True
+        
+        """
+        return ["Brine volume change (m3)",
+                "Water vapor mass in cavern (kg)",
+                "Cavern volume (m3)",
+                "Brine volume (m3)",
+                "Brine average pressure (Pa)",
+                "Water vapor mass flow in (+) out (-) of cavern (kg/s)",
+                "Total cavern pressure (gasses + water vapor) (Pa)",
+                "Energy of brine (J)",
+                "Energy of cavern (J)",
+                "Cavern average gas pressure excluding water vapor (Pa)"]
+        
         
     @property
     def component_type(self):
@@ -790,6 +808,7 @@ class SaltCavern(AbstractComponent):
             
 
     
+    
         
         
 
@@ -807,7 +826,6 @@ class SaltCavern(AbstractComponent):
         self._t_cavern_wall_m1 = self._t_cavern_wall
         self._m_brine_m1 = self._m_brine
         self._t_brine_m1 = self._t_brine
-#        self._t_brine_wall_m1 = self._t_brine_wall
         self._m_cavern_m1 = self._m_cavern
         
         
@@ -819,7 +837,8 @@ class SaltCavern(AbstractComponent):
                 cavern_vapor_mass_flow,
                 p_cavern,
                 e_brine,
-                e_cavern) = self.evaluate_residuals(get_independent_vars=True)
+                e_cavern,
+                p_cavern_novapor) = self.evaluate_residuals(get_independent_vars=True)
         
         self._p_brine_m1 = p_brine
         

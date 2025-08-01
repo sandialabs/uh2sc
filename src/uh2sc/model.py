@@ -12,7 +12,7 @@ import pandas as pd
 import CoolProp.CoolProp as CP
 
 from uh2sc import validator
-from uh2sc.errors import InputFileError, NewtonSolverError
+from uh2sc.errors import InputFileError, NewtonSolverError, DeveloperError
 from uh2sc.solvers import NewtonSolver
 from uh2sc.abstract import AbstractComponent, ComponentTypes
 from uh2sc.ghe import ImplicitEulerAxisymmetricRadialHeatTransfer
@@ -48,7 +48,7 @@ class Model(AbstractComponent):
      surface pipes and may include pumps/compressors.
     """
 
-    def __init__(self,inp,single_component_test=False,solver_options=None,**kwargs):
+    def __init__(self,inp,single_component_test=False,solver_options=None,get_independent_vars=True,**kwargs):
 
         """
         Construct a combined model of 1) a salt cavern, 2) an arbitrary number
@@ -122,7 +122,22 @@ class Model(AbstractComponent):
 
         self._solutions = {}
         
-        self.evaluate_residuals(get_independent_vars=True)
+        if get_independent_vars:
+            self._independent_vars = {}
+            ind_vars = self.evaluate_residuals(get_independent_vars=get_independent_vars)
+            self._independent_vars[self.time] = ind_vars
+        
+        self._get_independent_vars = get_independent_vars
+        
+        if len(self.independent_vars_descriptions) != len(self._independent_vars[0.0]):
+            raise DeveloperError("The number of independent variables does"
+            +" not equal the number of independent variables. Somewhere in "
+            +"the code a change has been made where an independent variable"
+            +" is not described. You need to check the "
+            +"indpendent_vars_descriptions and evaluate_residuals (with "
+            +"get_independent_vars=True) property and method and figure out"
+            +" which component has a mismatch in the number of variables"
+            +" returned in comparison to the number of descriptions!")
         
         # used for analytics to assure variables in the model are realistic
         # with respect to actual salt cavern gas dynamics.
@@ -185,6 +200,9 @@ class Model(AbstractComponent):
         
         return df
         
+    @property
+    def independent_vars(self):
+        return self._independent_vars
     
     
     @property
@@ -253,6 +271,13 @@ class Model(AbstractComponent):
                 # gather the results
                 self._solutions[self.time] = deepcopy(self.get_x())
                 
+                # gather independent variables if requested.
+                if self._get_independent_vars:
+                    self._independent_vars[self.time] = deepcopy(
+                        self.evaluate_residuals(get_independent_vars=
+                                                self._get_independent_vars))
+                
+                
                 
                 
                 # increase the time step if it has shrunk
@@ -317,19 +342,20 @@ class Model(AbstractComponent):
 
     def evaluate_residuals(self,x=None,get_independent_vars=False):
         residuals = []
+        if get_independent_vars:
+            ind_vars = []
+            
         if x is None:
             for _cname, component in self.components.items():
 
                 # this is the single x behavior used by
                 # local evaluations of residuals
-
-                residuals += list(component.evaluate_residuals())
                 if get_independent_vars:
-                    self.independent_vars = component.evaluate_residuals(
-                        get_independent_vars=get_independent_vars)
+                    ind_vars += list(component.evaluate_residuals(
+                        get_independent_vars=get_independent_vars))
+                else:
+                    residuals += list(component.evaluate_residuals())
 
-                
-            return np.array(residuals)
         else:
             # this is for scipy where a matrix of all the different
             # vectors needed to evaluate the jacobian is fed in
@@ -339,9 +365,9 @@ class Model(AbstractComponent):
                     for _cname, component in self.components.items():
                         v_residuals += list(component.evaluate_residuals(xv))
                         if get_independent_vars:
-                            self.independent_vars = component.evaluate_residuals(
+                            ind_vars += list(component.evaluate_residuals(
                                 x=xv,
-                                get_independent_vars=get_independent_vars)
+                                get_independent_vars=get_independent_vars))
                     residuals.append(v_residuals)
             elif x.ndim == 1:
                 for _cname, component in self.components.items():
@@ -350,22 +376,37 @@ class Model(AbstractComponent):
                     # local evaluations of residuals
                     residuals += list(component.evaluate_residuals(x))
                     if get_independent_vars:
-                        self.independent_vars = component.evaluate_residuals(
+                        ind_vars += list(component.evaluate_residuals(
                             x=x,
-                            get_independent_vars=get_independent_vars)
+                            get_independent_vars=get_independent_vars))
 
+        if get_independent_vars:
+            return np.array(ind_vars)
 
-
-            return np.array(residuals)
+        return np.array(residuals)
 
 
     def load_var_values_from_x(self, xg_new):
         for cname, component in self.components.items():
             component.load_var_values_from_x(xg_new)
             
+            
     def shift_solution(self):
         for cname, component in self.components.items():
             component.shift_solution()
+    
+    @property
+    def independent_vars_descriptions(self):
+        """
+        gives a 1:1 description of each independent variable so that 
+        a user can easily find what variables mean and column names 
+        can be constructed for global output in a model.
+        """
+        desc = []
+        for cname, component in self.components.items():
+            desc += component.independent_vars_descriptions
+        
+        return desc
             
     def equations_list(self):
         e_list = []

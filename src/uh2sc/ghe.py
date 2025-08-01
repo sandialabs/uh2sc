@@ -109,6 +109,7 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
 
         self.grid = rr
         self._iter = 0
+        self._range_index = range(0,self.number_elements)
 
 
     def _Qfunc(self,Tgvec,idx):
@@ -229,7 +230,7 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
             raise NotImplementedError("I'm still working on the case "
             +"where this is connected to something!!!")
 
-        range_index = range(0,self.number_elements)
+        range_index = self._range_index
 
 
         Qg = [(Tgvec[idx] - self.Tg)/self.RTg[idx] for idx in range_index]
@@ -243,9 +244,24 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
 
         self.Q = Q
         self.Qg = Qg
+        
+        if get_independent_vars:
+            Qind_vars = list(self.Q[1:-1])
+            Qg_ind_vars = [Qg_ for Qg_ in self.Qg]
+            return Qind_vars + Qg_ind_vars
 
         return residuals
     
+    @property
+    def independent_vars_descriptions(self):
+        Qlist = [f"Heat flux from GHE element {idx} to {idx+1} (W)" 
+                 for idx in range(self.number_elements+1) if idx !=0 and idx != self.number_elements] 
+        Qglist = [f"Heat flux lost downward and/or upward from GHE element {idx+1}"
+                  for idx in self._range_index]
+        
+        return Qlist + Qglist
+         
+         
     def equations_list(self):
         e_list = []
         e_list += ["Axisymmetric heat transfer flux continuity with cavern"]

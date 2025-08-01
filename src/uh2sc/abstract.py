@@ -42,7 +42,7 @@ class AbstractComponent(ABC):
         interface variable indices for the next component
         """
         pass
-        
+    
     @property
     @abstractmethod
     def component_type(self):
@@ -69,7 +69,28 @@ class AbstractComponent(ABC):
 
     @abstractmethod
     def get_x(self):
+        """
+        Must collect all of the local variables into an ordered list that
+        will be integrated into the global variable vector.
+        
+        """
         pass
+    
+    
+    @abstractmethod
+    def independent_vars_descriptions(self):
+        """
+        gives a 1:1 description of each independent variable so that 
+        a user can easily find what variables mean and column names 
+        can be constructed for global output in a model.
+        
+        You must keep this ordered list the same as what evaluate_residuals
+        returns when  get_independent_vars=True for the component being 
+        modeled.
+        
+        """
+        pass
+    
 
     @abstractmethod
     def load_var_values_from_x(self,xg):

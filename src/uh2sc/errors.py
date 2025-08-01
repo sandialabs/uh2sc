@@ -37,3 +37,6 @@ class FluidMixturePresTempNotValid(ValueError):
 
 class CavernStateOutOfOperationalBounds(ValueError):
     pass
+
+class DeveloperError(Exception):
+    pass
