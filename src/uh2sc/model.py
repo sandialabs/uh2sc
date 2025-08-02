@@ -145,14 +145,28 @@ class Model(AbstractComponent):
 
     def _form_array(self):
         """
-        Create a numpy array and column names
+        Create a numpy array and column names for model output.
         
         """
+
         keys = np.array(list(self._solutions.keys()))
+
         values = np.array(list(self._solutions.values()))
         column_names = self.xg_descriptions
         column_names = ["Time (s)"] + column_names
-        out_arr = np.concat([keys.reshape([len(keys),1]),values],axis=1)
+        if self._get_independent_vars:
+            keys2 = np.array(list(self._independent_vars.keys()))
+            if not (keys == keys2).all():
+                raise DeveloperError("The time steps for independnts_vars and"
+                +" solutions have become misaligned. This is a developer "
+                +"error and needs to be fixed by changing the source code!")
+            column_names += self.independent_vars_descriptions
+            values2 = np.array(list(self._independent_vars.values()))
+            values_all = np.concatenate([values,values2],axis=1)
+        else:
+            values_all = values
+            
+        out_arr = np.concat([keys.reshape([len(keys),1]),values_all],axis=1)
         return column_names, out_arr
     
     def write_results(self,filename="uh2sc_results.csv"):
@@ -181,20 +195,16 @@ class Model(AbstractComponent):
         # get the results
         column_names, out_arr = self._form_array()
         start_date_str = self.inputs['initial']['start_date']
-        time_step = self.inputs['calculation']['time_step']
-        end_time = self.inputs['calculation']['end_time']
 
         # process for dataframe considerations        
         if relative_time:
-            index = range(0, end_time + time_step, time_step)
+            index = out_arr[:,column_names.index("Time (s)")]
         else:
             # date considered.
             start_date = pd.to_datetime(start_date_str)
-            # Calculate the number of time steps
-            num_steps = int(end_time / time_step) + 1
+            delta = pd.to_timedelta(out_arr[:,column_names.index("Time (s)")],unit='s')
             
-            # Create a datetime index with the specified time step
-            index = pd.date_range(start=start_date, periods=num_steps, freq=f'{time_step}S')
+            index = start_date + delta
         
         df = pd.DataFrame(out_arr,index=index,columns=column_names)
         

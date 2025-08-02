@@ -46,6 +46,114 @@ def create_df_from_sim_output(nonleapyear,results_dict):
 def fahrenheit_to_kelvin(deg_fahrenheit):
     return 5/9 * (deg_fahrenheit - 32) + 273.15
 
+
+def compare_dataframes_interpolated(
+    df1: pd.DataFrame, time_col1: str, value_col1: str,
+    df2: pd.DataFrame, time_col2: str, value_col2: str,
+    return_metrics: bool = True
+):
+    """
+    Interpolates df2 to match df1's time points using linear interpolation, then compares values.
+
+    Parameters:
+        df1 (pd.DataFrame): Reference DataFrame (target time points).
+        time_col1 (str): Column name for time in df1.
+        value_col1 (str): Column name for values in df1.
+        df2 (pd.DataFrame): DataFrame to interpolate.
+        time_col2 (str): Column name for time in df2.
+        value_col2 (str): Column name for values in df2.
+        return_metrics (bool): If True, return RMSE and MAE.
+
+    Returns:
+        pd.DataFrame: DataFrame with columns: time, value_df1, value_df2_interp, abs_error, sq_error
+    """
+    # Sort both dataframes by time
+    df1 = df1.sort_values(by=time_col1).reset_index(drop=True)
+    df2 = df2.sort_values(by=time_col2).reset_index(drop=True)
+
+    # Extract arrays
+    t1 = df1[time_col1].values
+    v1 = df1[value_col1].values
+    t2 = df2[time_col2].values
+    v2 = df2[value_col2].values
+
+    # Interpolate v2 at times t1
+    v2_interp = np.interp(t1, t2, v2)
+
+    # Build comparison DataFrame
+    comparison = pd.DataFrame({
+        'time': t1,
+        'value_df1': v1,
+        'value_df2_interp': v2_interp
+    })
+    comparison['abs_error'] = np.abs(v1 - v2_interp)
+    comparison['sq_error'] = (v1 - v2_interp) ** 2
+
+    # Optional metrics
+    if return_metrics:
+        rmse = np.sqrt(np.mean(comparison['sq_error']))
+        mae = np.mean(comparison['abs_error'])
+        print(f"RMSE: {rmse:.4f}")
+        print(f"MAE:  {mae:.4f}")
+
+    return comparison
+
+
+# written by AI
+def plot_three_dataframes(
+    df1, col1_x, col1_y, label1,
+    df2=None, col2_x=None, col2_y=None, label2=None,
+    df3=None, col3_x=None, col3_y=None, label3=None,
+    ax=None,
+    label_x: str = "X-axis",
+    label_y: str = "Y-axis",
+    font_size: int = 14,
+    show_legend: bool = True
+):
+    """
+    Plots data from up to three pandas DataFrames on the same matplotlib Axes.
+
+    Parameters:
+        df1, df2, df3 (pd.DataFrame): DataFrames to plot.
+        colX_x, colX_y (str): Column names for x and y axes in each DataFrame.
+        labelX (str): Label for each dataset in the legend.
+        ax (matplotlib.axes.Axes): Axes to plot on. If None, creates new Axes.
+        label_x (str): Label for the x-axis.
+        label_y (str): Label for the y-axis.
+        font_size (int): Font size for labels and legend.
+        show_legend (bool): Whether to display a legend.
+    """
+    if ax is None:
+        fig, ax = plt.subplots()
+
+    plt.rcParams.update({'font.size': font_size})
+
+    # Plot each dataset
+    if df1 is not None:
+        ax.plot(df1[col1_x], df1[col1_y], label=label1, linewidth=2)
+    if df2 is not None:
+        ax.plot(df2[col2_x], df2[col2_y], label=label2, linestyle='--', linewidth=2)
+    if df3 is not None:
+        ax.plot(df3[col3_x], df3[col3_y], label=label3, marker='o', linestyle='', markersize=6)
+
+    # Axis labels and grid
+    ax.set_xlabel(label_x)
+    ax.set_ylabel(label_y)
+    ax.grid(True)
+
+    # Legend (optional)
+    if show_legend:
+        ax.legend(
+            loc='center left',
+            bbox_to_anchor=(1.02, 0.5),
+            fontsize=font_size - 2,
+            borderaxespad=0
+        )
+
+    return ax
+
+
+
 class Constants:
     # physical constants
     gravitational_constant = 9.81 # m/s2
@@ -264,13 +372,15 @@ class TestSaltCavernVerification(unittest.TestCase):
 
         # one parameter that moves this to a long run -time 
         # verification case with plots.
-        cls.run_verification = True
+        cls.run_verification = False
         
         cls.run_parallel = True
         
         cls.filedir = os.path.dirname(__file__)
         
-        cls.run_all = False
+        cls.run_all = True
+        
+        cls.create_plots = True
 
     @classmethod
     def tearDownClass(cls):
@@ -313,6 +423,8 @@ class TestSaltCavernVerification(unittest.TestCase):
             else:
                 for gas_type, subd in study_input.items():
                     run_gas_type(gas_type, subd, self.run_verification, self.nieland_obj, con)
+        else:
+            logging.warning("Skipping test_nieland_verification because self.run_all=False!")
                 
                 
     def test_gas_mixture_mass_balance(self):
@@ -398,43 +510,148 @@ class TestSaltCavernVerification(unittest.TestCase):
                                    model.components['cavern']._m_cavern[1]) 
                                    < 200)
             
+        
+        logging.warning("Skipping test_gas_mixture_mass_balance because self.run_all=False!")
+            
 
     
     def test_hanEtAl_air_with_actual_test_data(self):
         
-        if True: #self.run_all:
+        if self.run_all:
         
             #load input file
             infile = os.path.join(self.filedir,"test_data","HanEtAl_2022_24hr_ops_validation_air.yml")
-            #with open(infile, 'r', encoding='utf-8') as infile:
-            #    inp = yaml.load(infile, Loader=yaml.FullLoader)
+
                 
-            model = Model(infile)
+            if not self.run_verification:
+                with open(infile, 'r', encoding='utf-8') as infile:
+                   inp = yaml.load(infile, Loader=yaml.FullLoader)
+                   
+                inp["calculation"]["end_time"] = 20000
+                inp["calculation"]["time_step"] = 1200
+                model = Model(inp)
+            else:
+                model = Model(infile)
+            
+            
+            
             
             model.run()
             
             df = model.dataframe
             
-            
             val_data_fnames = {"Pressure Data":"2022_Han_PressureData.csv",
                                "Model Pressure":"2022-HANEtal_Model_pressure.csv",
                                "Temperature Data":"2022_Han_TemperatureData_Fig5b.csv",
-                               "Model Temperature":"2022_Han_ModelTemperature_Fig5b.csv"}
+                               "Model Temperature":"2022_Han_ModelTemperature_Fig5b.csv",
+                               "Mass Data":"2022_Han_et_al_mass_of_air.csv"}
 
             # load the validation data
             dict_validation = {}
             for data_name, fname in val_data_fnames.items():
                 val_path = os.path.join(self.filedir,"test_data",fname)
-                dict_validation[data_name] = pd.read_csv(val_path)
-                
+                dict_validation[data_name] = pd.read_csv(val_path,header=None)
+                dict_validation[data_name].columns = ["Time (s)","Temperature (K)"]
+                dict_validation[data_name]["Time (s)"] = 3600 * dict_validation[data_name]["Time (s)"]
+            
+            df["Cavern dry pressure (MPa)"] = df["Cavern average gas pressure excluding water vapor (Pa)"]/1e6
+            
+            # shorten the error assertion comparison
+            df_pv = dict_validation["Pressure Data"][dict_validation["Pressure Data"]["Time (s)"] < 20000]
+            df_tv = dict_validation["Temperature Data"][dict_validation["Temperature Data"]["Time (s)"] < 20000]
+            
+            # It is NOT temperature below. Its just something I ddidn't clean up. It works!
+            pres_compare = compare_dataframes_interpolated(
+                df_pv, "Time (s)", "Temperature (K)",
+                df, "Time (s)", "Cavern dry pressure (MPa)",
+                True)
+            
+            fail_str = ("The uh2sc model is performing more poorly than the 8/1/2025"
+                  +" validation with Han et. al. 2022 You need to run the"
+                  +" entire validation again and make sure that you can"
+                  +" accept the new error level. Set TestSaltCavernVerification.run_verification"
+                  +" = True to run the much longer validation for Nieland"
+                  +" 2008 and Han et. al. 2022.")
+            
+            
+            if (pres_compare['abs_error'] < 0.16).all():
+                pass
+            else:
+                print(fail_str)
+                self.assertTrue(False)
+            
+            
+            temp_compare = compare_dataframes_interpolated(
+                df_tv, "Time (s)", "Temperature (K)",
+                df, "Time (s)", "Cavern gas temperature (K)",
+                True)
+            
+            if (temp_compare['abs_error'] < 1.55).all():
+                pass
+            else:
+                print(fail_str)
+                self.assertTrue(False)
+            
+            
             # HERE IS WHERE I LEFT OFF
-
+            if self.create_plots and self.run_verification:
+                fig,axl = plt.subplots(3,1,figsize=(10,20))
+                
+                plot_three_dataframes(
+                    df, "Time (s)", "Cavern gas temperature (K)","uh2sc",
+                    dict_validation['Model Temperature'], "Time (s)", "Temperature (K)","Han et. al. 2022",
+                    dict_validation['Temperature Data'], "Time (s)", "Temperature (K)","Data",
+                    axl[0],
+                    label_x="Time (s)",
+                    label_y="Temperature (K)"
+                )
+                
+                
+                
+                # NOT temperature (K) but oh well!
+                plot_three_dataframes(
+                    df, "Time (s)", "Cavern dry pressure (MPa)","uh2sc",
+                    dict_validation['Model Pressure'], "Time (s)", "Temperature (K)","Han et. al. 2022",
+                    dict_validation['Pressure Data'], "Time (s)", "Temperature (K)","Data",
+                    axl[1],
+                    label_x="Time (s)",
+                    label_y="Pressure (MPa)"
+                )
+                
+                df["Cavern air mass change (10,000 kg)"] = (df["Cavern Air mass (kg)"] 
+                                            - df["Cavern Air mass (kg)"].iloc[0])/1e4
+                # NOT temperature (K) but oh well!
+                plot_three_dataframes(
+                    df, "Time (s)", "Cavern air mass change (10,000 kg)","uh2sc",
+                    dict_validation['Mass Data'], "Time (s)", "Temperature (K)","Han et. al. 2022",
+                    None, "Time (s)", "Temperature (K)","Data",
+                    axl[2],
+                    label_x="Time (s)",
+                    label_y="Cavern air mass (10,000 kg)"
+                )
+                
+                area = (model.inputs['cavern']['height'] 
+                        * np.pi * model.inputs['cavern']['diameter'] 
+                        + 0.5 * np.pi * model.inputs['cavern']['diameter'] ** 2)
+                
+                df["flux_compare (W)"] = 30 * area * (df["Cavern gas temperature (K)"] 
+                                                      - df["Cavern wall temperature (K)"])
+                
+                
+                plt.show()
+                
+                fig2,ax2 = plt.subplots(1,1,figsize=(10,10))
+                
+                plot_three_dataframes(
+                    df, "Time (s)", "flux_compare (W)","Derived from Temperature",
+                    df, "Time (s)", "GHE name `nieland_ghe` heat flux at inner_radius (W)","Model output into GHE",
+                    None, None, None,None,
+                    ax2, "Time (s)", "Heat Flux (W)")
+                
             
-            
-            breakpoint()
-            pass
-
-        
+                plt.show()
+                
+        logging.warning("Skipping test_hanEtAl_air_with_actual_test_data because self.run_all=False!")
 
 
 if __name__ == "__main__":

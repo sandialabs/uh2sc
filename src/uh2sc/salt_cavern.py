@@ -188,9 +188,6 @@ class SaltCavern(AbstractComponent):
         self._water_m1 = water_m1
         
         # time and indices
-        self._time = 0
-        self._first_step = True
-        self._step_num = 0.0
         self._gindices = global_indices
 
         _fluid_m1 = CP.AbstractState("HEOS","&".join(self._fluid.fluid_names()))
@@ -460,7 +457,6 @@ class SaltCavern(AbstractComponent):
                                                                          rho_vapor,
                                                                          rho_cavern_novapor,
                                                                          h_vapor)
-    
     
         q_cavern_wall, q_brine_wall = self.cavern_wall_heat_flux(t_cavern,
                                   t_cavern_wall,t_brine,
@@ -943,15 +939,19 @@ class SaltCavern(AbstractComponent):
 
         # same as above
         q_cavern_wall = ((self._area_horizontal + self._area_vertical * 
-                          (1 - height_cavern/
+                          (height_cavern/
                            height_total))
             * ht_coef_wall
             * (t_cavern_wall - t_cavern))
+        
+
         
         q_brine_wall = ((self._area_horizontal + self._area_vertical * 
                                height_brine / height_total)
                                * ht_coef_brine_wall
                                * (t_cavern_wall - t_brine))
+        
+        
         
         return q_cavern_wall, q_brine_wall
     
