@@ -230,38 +230,55 @@ class Model(AbstractComponent):
                             dict = dict that conforms to the uh2sc schema
 
         """
-        # one day this can be changed to saline water and a salinity equation
-        # that keeps the salinity saturated can be added.
-        self.brine_water = CP.AbstractState("HEOS","Water")
+        self.is_single_component_test = single_component_test
+        self.logging = logging
+        self.inputs = self._read_input(inp)
         
-        if "cool_prop_backend" not in inp["calculation"]:
-            inp["calculation"]["cool_prop_backend"] = "HEOS"
+        if not single_component_test:
+            # Deal with default values for optional inputs.
+            if "cool_prop_backend" not in inp["calculation"]:
+                inp["calculation"]["cool_prop_backend"] = "HEOS"
+                
+            if "machine_learning_acceptable_percent_error" not in inp["calculation"]:
+                inp["calculation"]["machine_learning_acceptable_percent_error"] = 0.1
+                
+            if "run_parallel" not in inp["calculation"]:
+                inp["calculation"]["run_parallel"] = True
+            
+            if not inp["calculation"]["run_parallel"]:
+                self.logging.warning("This simulation is running in serial which"
+                    +" is much slower than running in parallel and should be"
+                    +" confined to debugging!")
+                
+            self.PT = [inp["initial"]["pressure"],inp["initial"]["temperature"]]
+            
+            time_step = self.inputs["initial"]["time_step"]
+            self.time_step = self.inputs["initial"]["time_step"]
+            
+            self._end_time = self.inputs["calculation"]["end_time"]
+            self._max_time_step = self.inputs["calculation"]["max_time_step"]
+            self._min_time_step = self.inputs["calculation"]["min_time_step"]
+            self._run_parallel = self.inputs["calculation"]["run_parallel"]
         
         if solver_options is None:
             #TOL will be replaced later on if use_relative_convergence=True
             solver_options = {"TOL": 1.0e-2,"LOG_PROGRESS":True,
                               "LOG_LEVEL":logging.WARNING, "MAXITER":100,
                               "USE_RELATIVE_CONVERGENCE":True}
+            
+        
         # logging will be setup differently
         # once self.run is invoked.
-        self.logging = logging
+        
         self.converged_solution_point = False
-        self.inputs = self._read_input(inp)
+        
         if isinstance(inp,str):
             self.input_file = inp
         else:
             self.input_file = None
-        time_step = self.inputs["initial"]["time_step"]
-
-        nstep = int(self.inputs["calculation"]["end_time"]
-                    / time_step
-                    + 1)
-        self._end_time = self.inputs["calculation"]["end_time"]
-        self._max_time_step = self.inputs["calculation"]["max_time_step"]
-        self._min_time_step = self.inputs["calculation"]["min_time_step"]
+        
         self.time = 0.0
-        self.time_step = self.inputs["initial"]["time_step"]
-
+        
         self.test_inputs = kwargs
         if len(kwargs) != 0:
             self.is_test_mode = True
@@ -307,27 +324,27 @@ class Model(AbstractComponent):
         self._build(num_caverns,num_wells,num_ghes)
             
             
-        if self._use_relative_convergence:
+        if self._use_relative_convergence and not single_component_test:
             solver_options["TOL"] = self.solution_tolerance
             
  
         self.solver = NewtonSolver(solver_options)
 
-        
-
         self._solutions = {}
         
-        self._time_advice = TimeStepAdvisor(self.inputs["calculation"]["end_time"],
-                                            self._min_time_step)
-        # this drives the input_change_rate variable in time_advice. This will
-        # need to change if another way of forcing change in the model (than
-        # changing mass flow in/out is ever added (i.e. compressor pressure level etc...))
-        well_ind = [idx for idx,desc in enumerate(self.xg_descriptions) 
-                    if "Well" in desc and "mass flow for" in desc]
-        if len(well_ind) != 1:
-            raise DeveloperError("There must only be 1 well index. The current"
-                             +" model needs updating if there is more than one or 0!")
-        self._input_ind = well_ind[0]
+        if not single_component_test:
+            self._time_advice = TimeStepAdvisor(self.inputs["calculation"]["end_time"],
+                                                self._min_time_step)
+            # this drives the input_change_rate variable in time_advice. This will
+            # need to change if another way of forcing change in the model (than
+            # changing mass flow in/out is ever added (i.e. compressor pressure level etc...))
+            well_ind = [idx for idx,desc in enumerate(self.xg_descriptions) 
+                        if "Well" in desc and "mass flow for" in desc]
+            if len(well_ind) != 1:
+                raise DeveloperError("There must only be 1 well index. The current"
+                                 +" model needs updating if there is more than one or 0!")
+            self._input_ind = well_ind[0]
+            
         if get_independent_vars:
             self._independent_vars = {}
             ind_vars = self.evaluate_residuals(get_independent_vars=get_independent_vars)
@@ -347,7 +364,8 @@ class Model(AbstractComponent):
 
         # used for analytics to assure variables in the model are realistic
         # with respect to actual salt cavern gas dynamics.
-        self.components['cavern']._analytics()
+        if not single_component_test:
+            self.components['cavern']._analytics()
 
     def _form_array(self):
         """
@@ -528,11 +546,11 @@ class Model(AbstractComponent):
                 # gather the results
                 self._solutions[self.time] = deepcopy(self.get_x())
                 
-            
-            input_rate_change = ((self._solutions[self.time][self._input_ind] 
-                                 - self._solutions[self.time_m1][self._input_ind])/self.time_step)
-            
-            self._time_advice.data[step_num,:] = step_num,self.time,self.time_step,tup[-1],elapsed,tup[0],input_rate_change
+            if not self.is_single_component_test:
+                input_rate_change = ((self._solutions[self.time][self._input_ind] 
+                                     - self._solutions[self.time_m1][self._input_ind])/self.time_step)
+                
+                self._time_advice.data[step_num,:] = step_num,self.time,self.time_step,tup[-1],elapsed,tup[0],input_rate_change
 
             if solver_converged:
                 
@@ -549,9 +567,11 @@ class Model(AbstractComponent):
                 if self.time_step < self._max_time_step:
                     
                     if step_num > 20:
-                        breakpoint()
-                        self._time_advice.fit_and_predict(step_num,default_value=1.5)
-                        proposed_time_step_mult = self._time_advice.predict(default_value=1.5)
+                        
+                        if not self.is_single_component_test:
+                            proposed_time_step_mult = self._time_advice.fit_and_predict(step_num,default_value=1.5)
+                        else:
+                            proposed_time_step_mult = 1.5
                     else:
                         proposed_time_step_mult = 1.5
                     
@@ -570,8 +590,11 @@ class Model(AbstractComponent):
                     
                     
                     if step_num > 20:
-                        breakpoint()
-
+                        
+                        if not self.is_single_component_test:
+                            proposed_time_step_mult = self._time_advice.fit_and_predict(step_num,default_value=0.5)
+                        else:
+                            proposed_time_step_mult = 1.5
                     
                         self._time_advice.fit(step_num)
                         proposed_time_step_mult = self._time_advice.predict(default_value=0.5)
@@ -818,13 +841,15 @@ class Model(AbstractComponent):
         # cavern state (which changes unless every gas is the same)
         # also assigns self.fluid_components which is the list of all pure fluids
         # that exist in the model and is used to define equations
-        # sets self.molar_masses and others!
         if not self.is_test_mode:
             # if not, then we are in a test mode.
             find_all_fluids(self)
-            self.number_fluids = len(self.molar_masses)
+            self.number_fluids = len(self.fluids["cavern"].fluid_names())
 
         if num_caverns != 0:
+            if not hasattr(self, "fluids"):
+                find_all_fluids(self)
+            
             self._bounds_characteristics()
             self._build_cavern(xg_descriptions,xg,components)
             num_var["caverns"] = len(xg_descriptions)
@@ -882,6 +907,10 @@ class Model(AbstractComponent):
                 self.inputs["calculation"] = {}
                 self.inputs["calculation"]["end_time"] = self.test_inputs["end_time"]
                 self.inputs["calculation"]["time_step"] = self.test_inputs["dt"]
+                self.time_step = t_step
+                self._end_time = self.test_inputs["end_time"]
+                self._max_time_step = t_step * 1.5
+                self._run_parallel = False
             else:
                 # find the adjacent components to this GHE!
                 adjacent_comps = self._find_ghe_adj_comp(name)
@@ -963,18 +992,21 @@ class Model(AbstractComponent):
             fluid_name = self.inputs["initial"]["fluid"]
             self.fluids = {}
 
+            self.time_step = self.inputs["initial"]["time_step"]
+            comp, massfracs, compSRK, fluid = process_CP_gas_string(fluid_name,self.inputs["calculation"]["cool_prop_backend"],self)
 
-            comp, massfracs, compSRK, fluid = process_CP_gas_string(fluid_name)
 
+            fluid.set_state(CP.AbstractState)
             fluid.update(CP.PT_INPUTS,self.inputs['initial']['pressure'],self.inputs['initial']['temperature'])
+            
+            
 
             self.fluids["cavern"] = fluid
-            self.molar_masses = {}
             for pfluid in fluid.fluid_names():
                 tempfluid = CP.AbstractState("HEOS",pfluid)
                 tempfluid.set_mass_fractions([1.0])
-
-                self.molar_masses[pfluid] = tempfluid.molar_mass()
+                
+            fluid.del_state()
 
             self.test_inputs["r_radial"] = (np.log(self.test_inputs['r_out']
                                                    /(self.inputs['cavern']['diameter']/2.0))
@@ -982,26 +1014,32 @@ class Model(AbstractComponent):
                                                * self.test_inputs['salt_therm_cond']))
             if '&' in fluid_name:
                 fluid_str = "H2[1.0]&Methane[0.0]"  # fill methane cavern with new hydrogen
-                rcomp, rmassfracs, rcompSRK, rfluid = process_CP_gas_string(fluid_str)
+                rcomp, rmassfracs, rcompSRK, rfluid = process_CP_gas_string(fluid_str,self.inputs["calculation"]["cool_prop_backend"],self)
+                rfluid.set_state(CP.AbstractState)
                 rfluid.specify_phase(CP.iphase_gas)
                 rfluid.update(CP.PT_INPUTS, 20e6, 310)
+                rfluid.del_state()
 
                 self.fluids['cavern_well'] = rfluid
 
         else:
-            prev_components = self.inputs['wells']
+            self.prev_components = self.inputs['wells']
             ghe_name = self.inputs['cavern']['ghe_name']
-            next_components = {ghe_name:self.inputs["ghes"][ghe_name]}
+            self.next_components = {ghe_name:self.inputs["ghes"][ghe_name]}
 
         cavern = self.inputs["cavern"]
         beg_idx = len(xg)
 
-
+        
+        #instantiate for some calculations!
+        PT_list = [self.inputs['initial']['pressure'],self.inputs['initial']['temperature']]
+        self.fluids["cavern"].set_state(CP.AbstractState,PT_list)
+        
+        
         #pure water for brine calculations
         water = CP.AbstractState("HEOS","Water")
         water.update(CP.PT_INPUTS,self.inputs['initial']['pressure'],self.inputs['initial']['liquid_temperature'])
         water.set_mole_fractions([1.0])
-        self.water = water
 
         #geometry
         area_horizontal = np.pi * self.inputs['cavern']['diameter']**2/4
@@ -1022,6 +1060,9 @@ class Model(AbstractComponent):
 
         vol_cavern = (height_total - height_brine) * area_horizontal
         m_cavern = vol_cavern * self.fluids['cavern'].rhomass()
+        
+        # no longer pass an abstract state so that we can run evaluate_jacobian in parallel
+        self.water = ("HEOS","Water",[1.0],p_brine,t_brine)
 
 
         # add all cavern variables
@@ -1056,6 +1097,9 @@ class Model(AbstractComponent):
 
         self.xg = xg
         self.xg_description = x_desc
+        
+        # get rid of AbstractState so that we can run parallel later.
+        self.fluids['cavern'].del_state()
 
         components["cavern"] = SaltCavern(self.inputs,global_indices=
                                           (beg_idx,end_idx),
@@ -1084,7 +1128,7 @@ class Model(AbstractComponent):
 
         wells = self.inputs["wells"]
 
-
+        
 
         for wname, well in wells.items():
             numcv = float(self.inputs['wells'][wname]['pipe_lengths'][0] /
@@ -1114,8 +1158,10 @@ class Model(AbstractComponent):
 
                     valve_inflow, cavern_inflow = reservoir_mass_flows(self, 0.0)
                     mdot = valve_inflow[wname][vname]
+                        
+                    #initialize state for some calculations
+                    self.fluids[wname][vname].set_state(CP.AbstractState,self.PT)
 
-                    molefracs = self.fluids[wname][vname].get_mole_fractions()
                     pure_fluid_names = self.fluids[wname][vname].fluid_names()
                     massflows = calculate_component_masses(
                         self.fluids[wname][vname],
@@ -1138,6 +1184,12 @@ class Model(AbstractComponent):
 
                     # only creating this here so that the adiabatic static
                     # column function can be used.
+                    
+                    # VerticalPipe opens up the fluid again
+                    # making a need to close it now
+                    # vertical pipe closes this.
+                    self.fluids[wname][vname].del_state()
+                    
                     temp_vp = VerticalPipe(None,
                                            self.fluids[wname][vname],
                                            well["pipe_lengths"][0],
@@ -1153,9 +1205,15 @@ class Model(AbstractComponent):
                                            well["pipe_diameters"][3],
                                            1,
                                            well["pipe_total_minor_loss_coefficients"])
-
+                    
+                    
+                    
+                    
                     temp_fluid,pres_fluid = temp_vp.initial_adiabatic_static_column(
                         initial_temperature, initial_pressure, mdot)
+                    
+                    # get rid of AbstractState so we can parallelize
+                    
 
                     if isinstance(mdot,(float,int)):
                         inflow = mdot > 0.0
@@ -1356,6 +1414,7 @@ class Model(AbstractComponent):
             max_vol_fraction = 0.1
 
         cfl = self.fluids['cavern']
+        cfl.set_state(CP.AbstractState)
 
         temp = cfl.T()
         pres = cfl.p()
@@ -1397,7 +1456,7 @@ class Model(AbstractComponent):
         # brine norms
         brine_volume = (0.25 * np.pi * self.inputs['cavern']['diameter'] ** 2
                         * self.inputs['initial']['liquid_height'])
-        _bw = self.brine_water
+        _bw = CP.AbstractState("HEOS","Water")
         _bw.update(CP.PT_INPUTS,self._pressure_bounds["error"][1],self._temperature_bounds["error"][1])
         brine_mass = _bw.rhomass() * brine_volume
         brine_energy = brine_mass * _bw.hmass()
@@ -1423,10 +1482,8 @@ class Model(AbstractComponent):
                                                         self._pressure_bounds["error"][0]/pressure_norm,
                                                         1.0]))
         
-
-
-
-        cfl.update(CP.PT_INPUTS, pres, temp)
+        
+        cfl.del_state()
 
         self.bounds_checks = [self._temperature_bounds,
                               self._pressure_bounds,

@@ -2,8 +2,16 @@ from abc import ABC, abstractmethod
 from typing import List
 import numpy as np
 from scipy.sparse import csr_matrix
+from joblib import Parallel, delayed
 import jax
 from enum import Enum
+
+def compute_column(i, x, r, dx_val, residual_func):
+    dx = np.zeros_like(x)
+    dx[i] = dx_val
+    xdx = x + dx
+    dfdx = (residual_func(xdx) - r) / dx_val
+    return i, dfdx
 
 
 class AbstractThermoState(ABC):
@@ -29,6 +37,11 @@ class AbstractThermoState(ABC):
 
     @abstractmethod
     def get_mass_fractions(self) -> List[float]:
+        """Return the mass fractions of the fluid components."""
+        pass
+    
+    @abstractmethod
+    def get_mole_fractions(self) -> List[float]:
         """Return the mass fractions of the fluid components."""
         pass
 
@@ -76,6 +89,11 @@ class AbstractThermoState(ABC):
     def cpmass(self) -> float:
         """Return specific heat capacity at constant pressure [J/kg/K]."""
         pass
+    
+    @abstractmethod
+    def cvmass(self) -> float:
+        """Return specific heat capacity at constant volume [J/kg/K]."""
+        pass    
 
     @abstractmethod
     def isobaric_expansion_coefficient(self) -> float:
@@ -204,36 +222,63 @@ class AbstractComponent(ABC):
         """
         pass
 
-    def evaluate_jacobian(self,x=None):
-        # must do this numerically and we follow the same routine
-        if False:
-            # TODO: look into impelmenting an efficient sparse
-            # Jacobian or even implementing a sparse Jacobian 
-            # algorithm in Cython.
-            if x is None:
-                x = self.get_x()
-                
-            def compute_jacobian(func,x):
-                return jax.jacfwd(func)(x)
-            
-            
-            J = compute_jacobian(self.evaluate_residuals,x)
-            return csr_matrix(J)
+
+
+    def evaluate_jacobian(self, x=None, dx_val=1e-5):
+        if x is None:
+            x = self.get_x()
+        n = len(x)
+        r = self.evaluate_residuals(x)
+        J = np.zeros((n, n))
+    
+        if self._run_parallel:
+            results = Parallel(n_jobs=-1)(
+                delayed(compute_column)(i, x, r, dx_val, self.evaluate_residuals) for i in range(n)
+            )
+            for i, col in results:
+                J[:, i] = col
         else:
-            if x is None:
-                x = self.get_x()
-            J = np.zeros((len(x),len(x)))
-            
-            r = self.evaluate_residuals(x)
-            
-            for idx in range(len(x)):
-                dx = np.zeros(len(x))
-                dx[idx] = 0.00001
+            for i in range(n):
+                dx = np.zeros(n)
+                dx[i] = dx_val
                 xdx = x + dx
-                dfdx = (self.evaluate_residuals(xdx) - r)/0.00001
-            
-                J[:,idx] = dfdx
+                dfdx = (self.evaluate_residuals(xdx) - r) / dx_val
+                J[:, i] = dfdx
+    
+        return csr_matrix(J)
+
+
+
+    # def evaluate_jacobian(self,x=None):
+    #     # must do this numerically and we follow the same routine
+    #     if False:
+    #         # TODO: look into impelmenting an efficient sparse
+    #         # Jacobian or even implementing a sparse Jacobian 
+    #         # algorithm in Cython.
+    #         if x is None:
+    #             x = self.get_x()
                 
-            return csr_matrix(J)
+    #         def compute_jacobian(func,x):
+    #             return jax.jacfwd(func)(x)
+            
+            
+    #         J = compute_jacobian(self.evaluate_residuals,x)
+    #         return csr_matrix(J)
+    #     else:
+    #         if x is None:
+    #             x = self.get_x()
+    #         J = np.zeros((len(x),len(x)))
+            
+    #         r = self.evaluate_residuals(x)
+            
+    #         for idx in range(len(x)):
+    #             dx = np.zeros(len(x))
+    #             dx[idx] = 0.00001
+    #             xdx = x + dx
+    #             dfdx = (self.evaluate_residuals(xdx) - r)/0.00001
+            
+    #             J[:,idx] = dfdx
+                
+    #         return csr_matrix(J)
             
                 

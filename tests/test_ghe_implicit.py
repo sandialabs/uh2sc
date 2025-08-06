@@ -90,6 +90,13 @@ class TestGHE(unittest.TestCase):
                        dt=t_step*implicit_mult,end_time=t_end,type="GHE",
                        inner_radius=r_cavern,Q0=q_in_cavern,Qend=0.0,
                        height=h_cavern)
+        model.residual_normalization = {'cavern_gas_energy': 3591431272594.772, 
+                                        'cavern_gas_mass': 726543.991369199, 
+                                        'cavern_pressure': 20027490.643315244, 
+                                        'temperature_norm': 110, 'heat_flux_norm': 20783745.790479004, 
+                                        'mass_flow_norm': 4.204536987090272, 
+                                        'brine_mass': 726543.991369199, 
+                                        'brine_energy': 3591431272594.772}
 
         model.run()
 

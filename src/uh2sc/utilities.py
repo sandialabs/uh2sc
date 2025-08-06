@@ -20,7 +20,9 @@ from uh2sc.errors import (FluidStrBracketError,
                           FluidStrNumbersDoNotAddToOneError,
                           FluidMixtureDoesNotExistInCoolProp,
                           FluidMixtureStateInfeasibleInCoolProp,
-                          FluidMixturePresTempNotValid)
+                          FluidMixturePresTempNotValid,
+                          FluidDoesNotExistInCoolProp,
+                          DeveloperError)
 from uh2sc.constants import Constants
 from uh2sc.thermodynamics import (solubility_of_nacl_in_h2o,
                                   density_of_brine_water)
@@ -28,9 +30,15 @@ from uh2sc.fluid import FluidWithFitOption
 
 const = Constants()
 
+def _create_fluid_from_tup(tup):
+    fluid = CP.AbstractState(tup[0],tup[1])
+    fluid.set_mass_fractions(tup[2])
+    return fluid
 
-def _update_fluid(fluid,pres,temp):
+
+def _update_fluid(fluid_tup,pres,temp):
     try:
+        fluid = _create_fluid_from_tup(fluid_tup)
         fluid.update(CP.PT_INPUTS,pres,temp)
     except ValueError as exc:
         if "not good" in str(exc):
@@ -49,6 +57,8 @@ def _update_fluid(fluid,pres,temp):
 
         else:
             raise exc
+            
+    return fluid
 
 
 
@@ -189,13 +199,14 @@ def create_CP_gas_string(fluid):
                      molefrac, name in zip(mol_fractions, names)])
 
 # originally written by AI, adjusted as needed with help from ChatGPT later.
-def verify_mixture_bips(fluid):
+def verify_mixture_bips(fluid_tup):
     """
     Verifies the presence of binary interaction parameters (BIPs)
     for all unique pairs in a CoolProp mixture model.
 
     Args:
-        fluid (CoolProp.AbstractState): An AbstractState instance
+        fluid_tup: 3-tuple: [0] fluid backend, [1] fuid components [2] fluid mass fractions
+             Everything needed to create an AbstractState instance
                                         representing the mixture.
 
     Returns:
@@ -212,6 +223,7 @@ def verify_mixture_bips(fluid):
     var_to_try = ["kij","vij","gammaT","betaT"]
 
     try:
+        fluid = _create_fluid_from_tup(fluid_tup)
         fluid_names = fluid.fluid_names()
         num_fluids = len(fluid_names)
 
@@ -250,6 +262,18 @@ def verify_mixture_bips(fluid):
     return one_bip_present, bip_status
 
 
+def pickup_relevant_ml_models(model,cpfluid):
+    mldir = os.path.join(os.path.dirname(__file__),"..","ml_fluids")
+    file_ending = ".joblib"
+    ml_models = [file for file in os.listdir(mldir) if file.endswith(file_ending)]
+    
+    for ml_model in ml_models:
+        # choose the best model if more than one exists?
+        pass
+    
+    return []
+    
+
 def process_CP_gas_string(matstr,backend,model):
     """
     Detects if a multi component fluid is specified using & for separation of components
@@ -280,20 +304,42 @@ def process_CP_gas_string(matstr,backend,model):
         massfracs = [1.0]
         compSRK = matstr
 
-    fluid = CP.AbstractState(backend,comp)
-    fluid.set_mass_fractions(massfracs)
+    cpfluid_tup = (backend,comp,massfracs) 
+    cpfluid = _create_fluid_from_tup(cpfluid_tup)
 
     # make sure that the fluid setup is covered by CoolProps!
-    one_bip_present, bip_status = verify_mixture_bips(fluid)
+    one_bip_present, bip_status = verify_mixture_bips(cpfluid_tup)
 
     if not one_bip_present:
         raise FluidDoesNotExistInCoolProp(f"The proposed mixture of fluids {comp} does not "
         +"have Binary Interaction Parameters (BIPs) in CoolProps UH2SC"
         +" cannot simulate this!")
-    if backend != "REFPROP" and "Hydrogen" in fluid.fluid_names() and len(fluid.fluid_names()) > 1:
+    if backend != "REFPROP" and "Hydrogen" in cpfluid.fluid_names() and len(cpfluid.fluid_names()) > 1:
         model.logging.warning(f"Backend {backend} is unlikely to accurately"+
                               " simulate hydrogen mixtures! Please consider"
                               +" switching to REFPROP backend!")
+        
+    # now see if you can pick up a machine learning training set that covers
+    # this analysis
+    ml_models = pickup_relevant_ml_models(model,cpfluid)
+    if len(ml_models)==0:
+        ml_model = None
+    elif len(ml_models)>1:
+        raise DeveloperError(f"{len(ml_models)} machine learning models for"
+                             +f" {comp} were found! Only one is allowed"
+                             +" currently! Please remove one from src/ml_fluids!")
+    else:
+        ml_model = ml_models[0]
+    
+    # This now intelligently blends ML and CoolProp such that ML is used if
+    # the requested temperature and pressure are within the training interval.
+    # you can use
+    fluid = FluidWithFitOption(cpfluid_tup, 
+                               ml_model, 
+                               model.logging, 
+                               model.inputs["calculation"]["machine_learning_acceptable_percent_error"] 
+                               )
+    
 
     return comp, massfracs, compSRK, fluid
 
@@ -314,6 +360,10 @@ def reservoir_mass_flows(model,time):
 
     inputs = model.inputs
 
+    PT = [inputs['initial']['pressure'],inputs['initial']['temperature']]
+    
+    model.fluids['cavern'].set_state(CP.AbstractState,PT)
+
     mdot_cavern = np.zeros(len(model.fluid_components))
     mdot_valves = {}
 
@@ -321,6 +371,11 @@ def reservoir_mass_flows(model,time):
         if wname != 'cavern':
             mdot_valves[wname] = {}
             for vname, valve_fluid in well_fluids.items():
+                
+                
+                valve_fluid.set_state(CP.AbstractState,PT=PT)
+                
+                
                 mdot_valves[wname][vname] = np.zeros(len(model.fluid_components))
 
                 # get stored information
@@ -344,6 +399,9 @@ def reservoir_mass_flows(model,time):
                 mdot_comp = mdot * np.array(mass_fracs)
                 mdot_valves[wname][vname][main_ind] += mdot_comp
                 mdot_cavern[main_ind] += mdot_comp
+                
+                valve_fluid.del_state()
+    model.fluids['cavern'].del_state()
 
     return mdot_valves, mdot_cavern
 
@@ -357,6 +415,7 @@ def find_all_fluids(model):
     """
     fluid_components = []
     fluid_mapping = {}
+    backend = model.inputs["calculation"]["cool_prop_backend"]
 
     # first get all fluid names from reservoirs and store them in "fluid_components" list
     for wname, well in model.inputs["wells"].items():
@@ -370,7 +429,7 @@ def find_all_fluids(model):
                 reservoir = valve["reservoir"]
 
                 vfluids = valve["reservoir"]["fluid"]
-                comps, molefracs, compSRK, fluid = process_CP_gas_string(vfluids)
+                comps, molefracs, compSRK, fluid = process_CP_gas_string(vfluids, backend, model)
                 #Translate to exact CoolProp name for the fluid in the DB
                 for pure_fluid in fluid.fluid_names():
                     if pure_fluid not in fluid_components:
@@ -378,7 +437,8 @@ def find_all_fluids(model):
                 fluid_mapping[wname][vname] = fluid
 
     # add the initial fluid in the cavern to fluid_components
-    icomps, imolefracs, icompSRK, ifluid = process_CP_gas_string(model.inputs["initial"]["fluid"])
+    icomps, imolefracs, icompSRK, ifluid = process_CP_gas_string(
+        model.inputs["initial"]["fluid"], backend, model)
     for ipure_fluid in ifluid.fluid_names():
         if ipure_fluid not in fluid_components:
             fluid_components.append(ipure_fluid)
@@ -403,41 +463,35 @@ def find_all_fluids(model):
                 fluid_str = _construct_ordered_fluid_str(fluid_components,
                                                          fluid_mapping,
                                                          (wname,vname))
-                comps, massfracs, compSRK, fluid = process_CP_gas_string(fluid_str)
+                comps, massfracs, compSRK, fluid = process_CP_gas_string(
+                    fluid_str, backend, model)
                 mdots[wname][vname] = np.stack((np.array(valve["mdot"]),np.array(valve["time"])))
                 fluids[wname][vname] = fluid
 
     # create a fluid for the cavern as well with all components present.
     cavern_fluid_str = _construct_ordered_fluid_str(fluid_components,
                                                     fluid_mapping)
-    icomps, imolefracs, icompSRK, ifluid = process_CP_gas_string(cavern_fluid_str)
+    icomps, imolefracs, icompSRK, ifluid = process_CP_gas_string(
+        cavern_fluid_str, backend, model)
     fluids["cavern"] = ifluid
 
     pres = model.inputs['initial']['pressure']
     temp = model.inputs['initial']['temperature']
     # set initial fluid properties
-    for wname, fluiddict in fluids.items():
-        if wname != 'cavern':
-            for vname, fluid in fluiddict.items():
-                _update_fluid(fluid,pres,temp)
+    # for wname, fluiddict in fluids.items():
+    #     if wname != 'cavern':
+    #         for vname, fluid in fluiddict.items():
+    #             fluid = _update_fluid(fluid,pres,temp)
 
-        _update_fluid(fluids['cavern'],pres,temp)
+    #     fluid = _update_fluid(fluids['cavern'],pres,temp)
 
 
     model.fluids = fluids
     model.fluid_components = fluid_components
     model.mdots = mdots
 
-    molar_masses = {}
-    for fcomp in fluid_components:
-        tempfluid = CP.AbstractState("HEOS",fcomp)
-        molar_masses[fcomp] = tempfluid.molar_mass()
 
-    # in kg/mol
-    model.molar_masses = molar_masses
-
-
-    return fluid_components, fluids, mdots, molar_masses
+    return fluid_components, fluids, mdots
 
 
 def _construct_ordered_fluid_str(fluid_components,fluid_mapping,names=None):
@@ -553,7 +607,6 @@ def conservation_of_volume(vol_cavern, volume_total, area, water, t_cavern,
 
     volume_liquid_brine = volume_total - vol_cavern
     height_brine = volume_liquid_brine / area
-    height_cavern = vol_cavern / area
     height_total = volume_total / area
 
     (mass_vapor, rho_vapor, h_vapor_1, p_vapor, h_evaporate) = (
@@ -631,3 +684,9 @@ def brine_average_pressure(fluid,water,height_total,height_brine,t_brine):
     return (pres_g_surf + height_brine_o_2 * const.g['value'] * rho_brine,
            solubility_brine,
            rho_brine)
+
+def init_water(water_tup):
+    water = CP.AbstractState(water_tup[0],water_tup[1])
+    water.set_mass_fractions(water_tup[2])
+    water.update(CP.PT_INPUTS,water_tup[3][0],water_tup[3][1])
+    return water

@@ -40,3 +40,6 @@ class CavernStateOutOfOperationalBounds(ValueError):
 
 class DeveloperError(Exception):
     pass
+
+class FluidDoesNotExistInCoolProp(ValueError):
+    pass

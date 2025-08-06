@@ -60,7 +60,7 @@ class Well(AbstractComponent):
         self._model = model
         self._name = well_name
         
-        self._number_fluids = model.number_fluids
+
         
         
         P0 = model.inputs['initial']['pressure']
@@ -105,6 +105,15 @@ class Well(AbstractComponent):
                                    pidx,
                                    well_dict["pipe_total_minor_loss_coefficients"],
                                    well_dict["valves"].keys())}
+
+        self._number_fluids = 0
+        for pipe_name, pipe in pipes.items():
+            self._number_fluids += pipe._number_fluids
+            
+            
+    
+        if len(pipes) != 1:
+            raise NotImplementedError("The number of pipes per well is limited to 1 for the present version of uh2sc!")
 
         # establish connectivity between pipes.
         if len(pipes)==1:
@@ -209,7 +218,7 @@ class Well(AbstractComponent):
         """
         if x is not None:
             self.load_var_values_from_x(x)
-        
+
         residuals = np.zeros(self._NUM_EQN)
         _eqn = 0
         # mass flow continuity
@@ -252,8 +261,10 @@ class Well(AbstractComponent):
                              +" than atmospheric pressure. Caverns should not"
                              +" be run at low pressure!")
                         mdot = 0
-
+                        
+                fluid.set_state(CP.AbstractState)
                 gmdots = calculate_component_masses(fluid, mdot)
+                fluid.del_state()
                 # mass balance of each gas component
                 
                 # factor 1000 to make mass flow match more important!
@@ -528,6 +539,7 @@ class VerticalPipe(object):
         self.num_cv = int(number_control_volumes)
         self.min_loss = total_minor_losses_coefficient
         self.D_h, self.area = self._hydraulic_diameter()
+        fluid.set_state(CP.AbstractState,[initial_pressure,initial_temperature])
         self.fluid = fluid
         self.fluid.specify_phase(CP.iphase_gas)
 
@@ -556,8 +568,9 @@ class VerticalPipe(object):
             else:
                 mass_rates = np.zeros((num_cv_p_1,self._number_fluids))
                 
+                
+        self.fluid.del_state()
         # state variables
-
         self.temp_fluid, self.pres_fluid = self.initial_adiabatic_static_column(initial_temperature,
                                                             initial_pressure,
                                                             mass_rate0)
@@ -584,6 +597,8 @@ class VerticalPipe(object):
                             * self.L_cv * self.material.kp)
         self.r_pipe_outer = np.log(self.diameters[3]/self.diameters[2])/(2.0*np.pi
                             * self.L_cv * self.material.kp)
+        
+        
 
     def _verify_adjacent_pipes_aligned(self,adj_inner_pipe,adj_outer_pipe):
         outer_aligned = True
@@ -671,6 +686,8 @@ class VerticalPipe(object):
         None.
 
         """
+        self.fluid.set_state(CP.AbstractState,[initial_pressure,initial_temperature])
+        
         temp_fluid = np.zeros(self.num_cv+1)
         pres_fluid = np.zeros(self.num_cv+1)
 
@@ -737,9 +754,13 @@ class VerticalPipe(object):
             fluid.update(CP.PT_INPUTS, pres_fluid[cv_n],
                                          temp_fluid[cv_n])
             rho_fluid[cv_n] = fluid.rhomass()
+            
+            fluid.del_state()
 
             return temp_fluid,pres_fluid,rho_fluid
         else:
+            
+            fluid.del_state()
             return temp_fluid,pres_fluid
 
 

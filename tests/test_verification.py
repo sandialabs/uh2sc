@@ -197,7 +197,7 @@ def run_gas_type(gas_type, subd, run_verification, nieland_obj, con):
 
         if not run_verification:
             # just run for 2 days and stop   TODO
-            inp['calculation']['end_time'] = 50 * 24 * 3600
+            inp['calculation']['end_time'] = 10 * 24 * 3600
 
         # create model object
         model = Model(inp)

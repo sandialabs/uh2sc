@@ -226,11 +226,23 @@ def validation(inp):
         if max_time_step < min_time_step:
             error(field, "The min_time_step cannot be greater than the max_time_step")
             
-   def valid_backend_check(field,value,error):
-       backends = CP.AbstractState.available_backends
-       if value not in backends:
-           error(field, f"For {field}, the backend {value} is not available. "
-                 +f"Valid backends are: {backends}")
+    def valid_backend_check(field,value,error):
+        
+        known_valid_backends = [
+             'HEOS',
+             'BICUBIC',
+             'REFPROP',
+             'TTSE'
+         ]
+
+        if value not in known_valid_backends:
+            try:
+                CP.AbstractState(value,"H2")
+            except Exception as exc:
+                error(field, f"For {field}, the backend {value} is not available. "
+                      +"Known valid backends are (others may exist): "
+                      +f"{known_valid_backends}. Exception raised: {exc}")
+
 
 
     # you must make a new entry if you put a new name for check_with in

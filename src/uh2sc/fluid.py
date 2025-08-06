@@ -5,9 +5,10 @@ Created on Wed Aug  6 08:50:04 2025
 
 @author: dlvilla
 """
-
-from CoolProp.CoolProp import AbstractState
+import logging
+import numpy as np
 from typing import List, Optional
+from CoolProp import CoolProp as CP
 from uh2sc.abstract import AbstractThermoState
 
 class FluidWithFitOption(AbstractThermoState):
@@ -21,18 +22,97 @@ class FluidWithFitOption(AbstractThermoState):
     :param backend: CoolProp backend name (e.g., "HEOS", "REFPROP").
     :param fluids: Fluid or mixture name as a single string (e.g., "Methane&Ethane").
     :param fluid_fit: Optional object with method overrides matching this API.
+    
+    IMPORTANT: This class has been separated from AbstractState so that
+    everything can be fed into "evaluate_residuals" as picklable. It can 
+    then be instantiated each time using "set_state" and then end with "del_state"
+    so that evaluate_jacobian can be run in parallel!
+    
     """
 
-    def __init__(self, backend: str, fluids: str, fluid_fit: Optional[object] = None):
-        self.state = AbstractState(backend, fluids)
-        self._fluids = fluids
+    def __init__(self, fluid_tup: tuple , fluid_fit: Optional[object] = None, 
+                 logger:logging.Logger = None, acceptable_error:float=0.1, PT=None):
+        self.state = None
+        self.backend = fluid_tup[0]
+        self._fluid_tup = fluid_tup
+        self._fluids = fluid_tup[1]
         self._fit = fluid_fit
+        self._acceptable_error = acceptable_error
+        self._max_msgs = 100
+        self._errors = []
+        self._PT = PT
+        if logger is None:
+            self._logging = logging
+        else:
+            self._logging = logger
+        self._num_msg = 0
+        
+    
+    def set_state(self,abstract_state,PT=None):
+        self.state = abstract_state(self._fluid_tup[0],self._fluid_tup[1])
+        self.state.set_mass_fractions(self._fluid_tup[2])
+        if PT is not None:
+            self.state.update(CP.PT_INPUTS,PT[0],PT[1])
+        elif self._PT is not None:
+            self.state.update(CP.PT_INPUTS,self._PT[0],self._PT[1])
+        
+    def del_state(self):
+        self._fluid_tup = (self.backend,"&".join(self.fluid_names()),
+                           self.get_mass_fractions(),[self.p(),self.T()])
+        self.state = None
+        
 
-    def _call(self, method_name: str, *args, **kwargs):
+    def _call(self, method_name: str, test_ml: bool = False, *args, **kwargs):
+        
         """Call method from fit object if it exists, else use CoolProp."""
         if self._fit and hasattr(self._fit, method_name):
-            return getattr(self._fit, method_name)(*args, **kwargs)
-        return getattr(self.state, method_name)(*args, **kwargs)
+            ml_val = getattr(self._fit, method_name)(*args, **kwargs)
+        if not self._fit or test_ml:
+            cp_val = getattr(self.state, method_name)(*args, **kwargs)
+            
+        if test_ml:
+            error = ml_val - cp_val
+            perc_error = 100 * error / cp_val
+            
+            if perc_error > self._acceptable_error:
+                self._errors.append({"Percent Error":perc_error,
+                                     "Absolute Error":error,
+                                     "Method":method_name,
+                                     "Temperature":getattr(self.state,"T"),
+                                     "Pressure":getattr(self.state,"P"),
+                                     "Fluid Names":getattr(self.state,"fluid_names"),
+                                     "Fluid Mass Fractions":getattr(self.state,"get_mass_fractions")})
+                self._num_msg += 1
+                self._logging.warning("The machine learning model has an "
+                                      +f"error of {perc_error} which is above"
+                                      +f" the acceptable error of {self._acceptable_error}"
+                                      +": DETAILS={self._error[-1}")
+                return cp_val
+            else:
+                if self._num_msg < self._max_msgs:
+                    self._num_msg += 1
+                    self._logging.debug("The machine learning model has an "
+                                          +f"error of {perc_error} which is below"
+                                          +f" the acceptable error of {self._acceptable_error}")
+                return ml_val
+
+        if not test_ml and not self._fit:
+            return cp_val
+
+        return ml_val
+    
+    def test_ml(self, method_name: str, *args, **kwargs):
+        """
+        test to see if the ml model meets the needed level of accuracy
+        
+        """
+        num_error = len(self._errors)
+        self._call(method_name, test_ml=True, *args, **kwargs)
+        num_error_2 = len(self._errors)
+        if num_error == num_error_2:
+            return True
+        return False 
+
 
     def update(self, input_pair: int, value1: float, value2: float) -> None:
         """
@@ -55,6 +135,18 @@ class FluidWithFitOption(AbstractThermoState):
         :return: Mass density.
         """
         return self._call("rhomass")
+    
+    def _check_sum_1(self, fractions):
+        frac_sum = np.array(fractions).sum()
+        if frac_sum < 0.999 or frac_sum > 1.001:
+            self.logging.warning(f"A set of fractions was input that does not "
+                                 +f"sum to 1! sum({fractions})={frac_sum} "
+                                 +"this has been normalized!")
+        return [frac/frac_sum for frac in fractions]
+    
+    def specify_phase(self, phase_id):
+        self.state.specify_phase(phase_id)
+        
 
     def set_mass_fractions(self, fractions: List[float]) -> None:
         """
@@ -62,7 +154,11 @@ class FluidWithFitOption(AbstractThermoState):
 
         :param fractions: List of mass fractions.
         """
-        return self._call("set_mass_fractions", fractions)
+        fractions = self._check_sum_1(fractions)
+        self.state.set_mass_fractions(fractions)
+        if self._fit:
+            self._fit.set_mass_fractions(fractions)
+        return 
 
     def get_mass_fractions(self) -> List[float]:
         """
@@ -70,7 +166,16 @@ class FluidWithFitOption(AbstractThermoState):
 
         :return: List of mass fractions.
         """
-        return self._call("get_mass_fractions")
+        return self.state.get_mass_fractions()
+    
+    def get_mole_fractions(self) -> List[float]:
+        """
+        Get current component mass fractions.
+
+        :return: List of mass fractions.
+        """
+        return self.state.get_mole_fractions()
+    
 
     def hmass(self) -> float:
         """
@@ -143,6 +248,14 @@ class FluidWithFitOption(AbstractThermoState):
         :return: Specific heat (cp).
         """
         return self._call("cpmass")
+    
+    def cvmass(self) -> float:
+        """
+        Get specific heat capacity at constant volume [J/kg/K].
+
+        :return: Specific heat (cv).
+        """
+        return self._call("cvmass")
 
     def isobaric_expansion_coefficient(self) -> float:
         """

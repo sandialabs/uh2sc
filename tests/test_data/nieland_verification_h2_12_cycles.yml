@@ -44,18 +44,18 @@ ghes:
       Qend: 0.0
     number_elements: 100
 initial:  #
+  time_step: 86400
   temperature: 326.3
   pressure: 17023743.5813687 #Pascal
   fluid: "H2"
   start_date: "2009-01-01" # Must be in iso format "YYYY-MM-DD"
   liquid_height: 1.0 # in meters
   liquid_temperature: 322.5 # ussually 2-4 C cooler than the gas
-  time_step: 86400
 calculation:
-  max_time_step: 172800 # seconds - 2 day time steps
-  min_time_step: 1200
+  min_time_step: 1200 # seconds -
+  max_time_step: 172800
   end_time: 31104000 #3456000 #
-  run_parallel: false
+  run_parallel: true
 heat_transfer:
   h_inner: "calc" # can enter a constant value if needed.
   h_cavern_brine: 100 # eventually a model is needed for this

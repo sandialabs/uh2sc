@@ -53,7 +53,14 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
             self.residual_normalization = None
         else:
             self._use_relative_convergence = model._use_relative_convergence
-            self.residual_normalization = model.residual_normalization
+            if self._use_relative_convergence:
+                if hasattr(model,"residual_normalization"):
+                    self.residual_normalization = model.residual_normalization
+                else:
+                    self._use_relative_convergence = False
+                    model.logging.info("GHE could not use relative converence"
+                                       +" because residual normalization was "
+                                       +"not provided!")
         self.dt = dt0
         self.number_elements = number_elements
 
@@ -307,7 +314,12 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
             m_brine = xg[cgind[0] + 2]
             t_brine = xg[cgind[0]+3]
             fluid = cavern._fluid
-            water = cavern._water
+            fluid.set_state(CP.AbstractState,PT=[cavern._p_cavern,t_cavern])
+
+            tup = cavern._water
+            water = CP.AbstractState(tup[0],tup[1])
+            water.update(CP.PT_INPUTS,tup[3][0],tup[3][1])
+            water.set_mass_fractions(tup[2])
             
             m_cavern = xg[cgind[1]-cavern._number_fluids+1:cgind[1]+1]
             
@@ -352,8 +364,10 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
                                       fluid,water,height_cavern,
                                       height_brine,height_total)
             
+            
+            
             self._q_axi_cavern = q_cavern + q_brine
         
-        
+            fluid.del_state()
         
 

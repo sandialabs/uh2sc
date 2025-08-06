@@ -14,12 +14,14 @@ from uh2sc.abstract import AbstractComponent
 from uh2sc.utilities import (calculate_component_masses,
                              calculate_cavern_pressure,
                              brine_average_pressure,
-                             conservation_of_volume)
+                             conservation_of_volume,
+                             init_water)
 from uh2sc.constants import Constants
 from uh2sc.ghe import ImplicitEulerAxisymmetricRadialHeatTransfer
 from uh2sc.well import Well
 from uh2sc.transport import natural_convection_nu_vertical
 from uh2sc.errors import CavernStateOutOfOperationalBounds
+from uh2sc.fluid import FluidWithFitOption
 
 
 const = Constants()
@@ -175,7 +177,7 @@ class SaltCavern(AbstractComponent):
         self._area_vertical = np.pi * input_dict['cavern']['diameter'] * input_dict["cavern"]["height"]
 
         #pure water for brine calculations
-        water = model.brine_water
+        water = CP.AbstractState("HEOS","Water")
         water.update(CP.PT_INPUTS,p0,T0brine)
         water.set_mass_fractions([1.0])
         self._initial_volume_brine = input_dict['initial']['liquid_height'] * self._area_horizontal
@@ -183,27 +185,32 @@ class SaltCavern(AbstractComponent):
         self._height_brine_m1 = self._height_brine
         self._height_total = input_dict["cavern"]["height"]
         self._fluid = model.fluids['cavern']
+        self._fluid.set_state(CP.AbstractState)
         self._fluid.update(CP.PT_INPUTS, input_dict['initial']['pressure'],
                                          input_dict['initial']['temperature'])
 
         delp_brine = 0.5 * const.g['value'] * (water.rhomass() * self._height_brine  + (self._height_total - self._height_brine) * self._fluid.rhomass())
         water.update(CP.PT_INPUTS,p0 + delp_brine,T0brine)
 
-        self._water = water
-        water_m1 = CP.AbstractState("HEOS","Water")
-        water_m1.set_mass_fractions([1.0])
-        water_m1.update(CP.PT_INPUTS,p0 + delp_brine,T0brine)
-        self._water_m1 = water_m1
+        self._water = ("HEOS","Water",[1.0],[p0 + delp_brine, T0brine])
+
+        self._water_m1 = ("HEOS","Water",[1.0],[p0 + delp_brine, T0brine])
 
         # time and indices
         self._gindices = global_indices
 
-        _fluid_m1 = CP.AbstractState("HEOS","&".join(self._fluid.fluid_names()))
-        _fluid_m1.set_mass_fractions(self._fluid.get_mass_fractions())
-        _fluid_m1.update(CP.PT_INPUTS, input_dict['initial']['pressure'],
-                                       input_dict['initial']['temperature'])
+        _fluid_m1 = (self._fluid.backend,
+                     "&".join(self._fluid.fluid_names()),
+                     self._fluid.get_mass_fractions(),
+                     )
 
-        self._fluid_m1 = _fluid_m1
+
+        self._fluid_m1 = FluidWithFitOption(_fluid_m1[0:3], 
+                                            self._fluid._fit, 
+                                            self._fluid._logging, 
+                                            self._fluid._acceptable_error,
+                                            [self._fluid.p(),self._fluid.T()])
+        
         self._number_fluids = len(model.fluids['cavern'].fluid_names())
 
         self._vol_brine = self._height_brine * self._area_horizontal
@@ -252,7 +259,6 @@ class SaltCavern(AbstractComponent):
                          "_t_cavern_wall":"Cavern wall temperature (K)",
                          "_p_cavern":"Cavern pressure (Pa)",
                          "_m_cavern":"Mass in cavern (kg)",
-                         "e_cavern":"Energy in cavern (J)",
                          "_vol_cavern":"Cavern volume (m3)",
                          "_t_brine":"Brine temperature (K)",
                          "_p_brine":"Brine pressure",
@@ -264,6 +270,8 @@ class SaltCavern(AbstractComponent):
         self.results = {}
         for attr, name in self.result_names.items():
             self.results[name] = []
+            
+        self._fluid.del_state()
 
 
 
@@ -353,9 +361,14 @@ class SaltCavern(AbstractComponent):
 
         # update composition of the current and previous time step fluids.
         fluid = self._fluid
+        fluid.set_state(CP.AbstractState,[self._p_cavern,t_cavern])
         fluid_m1 = self._fluid_m1
-        water = self._water
-        water_m1 = self._water_m1
+        fluid_m1.set_state(CP.AbstractState,[self._p_cavern_m1, self._t_cavern_m1])
+        
+        # initialize water Abstract State objects
+        water = init_water(self._water)
+        water_m1 = init_water(self._water_m1)
+
         fluid.set_mass_fractions(m_cavern/m_cavern.sum())
         fluid_m1.set_mass_fractions(m_cavern_m1/m_cavern_m1.sum())
 
@@ -635,7 +648,10 @@ class SaltCavern(AbstractComponent):
         if np.isnan(residuals).sum() > 0.0:
             ind_nan = np.where(np.isnan(residuals) == True)[0]
             raise ValueError(f"The following salt cavern equations produced NaN! {ind_nan}")
-
+            
+        # deinitialize states.
+        fluid.del_state()
+        fluid_m1.del_state()
 
         return residuals
 
@@ -847,7 +863,9 @@ class SaltCavern(AbstractComponent):
         rho_cavern = total_mass / self._vol_cavern
 
         self._p_cavern_m1 = p_cavern
-        self._water_m1.update(CP.PT_INPUTS,p_brine,self._t_brine)
+        
+        
+        #self._water_m1.update(CP.PT_INPUTS,p_brine,self._t_brine)
 
         self._vol_cavern_m1 = self._VOL_TOTAL - vol_brine - del_vol_brine
         self._vol_brine_m1 = self._VOL_TOTAL - self._vol_cavern_m1
@@ -1050,6 +1068,7 @@ class SaltCavern(AbstractComponent):
                 for vname, v_mdot in well_mdot.items():
 
                     wfluid = self._model.fluids[wname][vname]
+                    wfluid.set_state(CP.AbstractState)
 
                     if v_mdot.sum() > 0:
                         cavern_gas_mass_flow += v_mdot
@@ -1068,6 +1087,8 @@ class SaltCavern(AbstractComponent):
                     else:
                         cavern_mass_energy_flow += v_mdot.sum() * gas_mass_fraction * hmass
                         cavern_vapor_energy_flow += v_mdot.sum() * water_vapor_mass_fraction * h_vapor
+                        
+                    wfluid.del_state()
 
         return (cavern_gas_mass_flow, cavern_mass_energy_flow,
                 cavern_vapor_mass_flow, cavern_vapor_energy_flow)
