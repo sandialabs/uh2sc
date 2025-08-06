@@ -189,14 +189,48 @@ def validation(inp):
                           str(allowed_gas_species))
 
 
-    def time_step_less_than_end_time(field,value,error):
+    def time_step_check(field,value,error):
         end_time = inp['calculation']["end_time"]
+        max_time_step = inp['calculation']['max_time_step']
+        min_time_step = inp['calculation']['min_time_step']
+        
+        if value > max_time_step:
+            error(field, "The initial time_step cannot be greater than the max_time_step!")
+            
+        if value < min_time_step:
+            error(field, "The initial time_step cannot be less than the min_time_step")
 
         if end_time < value:
-            error(field, "The time_step cannot be greater than the end time!")
+            error(field, "The initial time_step cannot be greater than the end time!")
 
+    def max_time_step_check(field,value,error):
+        end_time = inp['calculation']["end_time"]
+        max_time_step = inp['calculation']['max_time_step']
+        min_time_step = inp['calculation']['min_time_step']
 
+        if min_time_step > max_time_step:
+            error(field, "The min_time_step cannot be greater than the max_time_step")
 
+        if end_time < value:
+            error(field, "The max_time_step cannot be greater than the end time!")
+            
+            
+    def min_time_step_check(field,value,error):
+        end_time = inp['calculation']["end_time"]
+        max_time_step = inp['calculation']['max_time_step']
+        min_time_step = inp['calculation']['min_time_step']
+
+        if end_time < value:
+            error(field, "The min_time_step cannot be greater than the end time!")
+
+        if max_time_step < min_time_step:
+            error(field, "The min_time_step cannot be greater than the max_time_step")
+            
+   def valid_backend_check(field,value,error):
+       backends = CP.AbstractState.available_backends
+       if value not in backends:
+           error(field, f"For {field}, the backend {value} is not available. "
+                 +f"Valid backends are: {backends}")
 
 
     # you must make a new entry if you put a new name for check_with in
@@ -209,8 +243,11 @@ def validation(inp):
                   "check_pipe_roughness":check_pipe_roughness,
                   "check_pipe_minor_loss_coef":check_pipe_minor_loss_coef,
                   "fluid_string_check":fluid_string_check,
-                  "time_step_less_than_end_time":time_step_less_than_end_time,
-                  "valve_pressure_check":valve_pressure_check}
+                  "time_step_check":time_step_check,
+                  "max_time_step_check":max_time_step_check,
+                  "min_time_step_check":min_time_step_check,
+                  "valve_pressure_check":valve_pressure_check,
+                  "valid_backend_check":valid_backend_check}
 
     def _add_check_with_functions(schema,dispatcher):
         # recursive function

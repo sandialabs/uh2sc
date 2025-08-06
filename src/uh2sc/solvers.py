@@ -131,7 +131,6 @@ warnings.filterwarnings(
 )
 np.set_printoptions(precision=3, threshold=10000, linewidth=300)
 
-logger = logging.getLogger(__name__)
 
 
 class SolverStatus(enum.IntEnum):
@@ -233,6 +232,8 @@ class NewtonSolver(object):
             self.bt_start_iter = 0
         else:
             self.bt_start_iter = self._options["BT_START_ITER"]
+            
+        self._solution_cost = {}
 
     def solve(self, model, ostream=None):
         """
@@ -260,9 +261,12 @@ class NewtonSolver(object):
         use_r_ = False
         new_norm = None
         r_ = None
+        
+        r_norm_history = np.zeros(self.maxiter)
 
         # MAIN NEWTON LOOP
         for outer_iter in range(self.maxiter):
+            
             if time.time() - t0 >= self.time_limit:
                 return (
                     
@@ -283,20 +287,53 @@ class NewtonSolver(object):
                 if outer_iter < self.bt_start_iter:
                     msg = f"iter: {outer_iter:<4d} norm: {r_norm:<10.2e} time: {time.time() - t0:<8.4f}"
                     if self.log_progress:
-                        logger.log(self.log_level, msg)
+                        model.logging.debug(msg)
                     if ostream is not None:
                         ostream.write(msg + "\n")
-
+            
             if r_norm < self.tol:
                 model.converged_solution_point = True
                 model.evaluate_residuals()
+                model.logging.info(f"Solution converged with R-norm {r_norm}"
+                                   +f" less than solution tolernace {self.tol}")
                 model.converged_solution_point = False
                 return (
                     SolverStatus.converged,
                     "Solved Successfully",
                     outer_iter,
                 )
-
+            
+            # detect stagnation in converger solution
+            r_norm_history[outer_iter] = r_norm
+            if outer_iter > 11:
+                last_iters = r_norm_history[outer_iter - 9:outer_iter+1]
+                delta = np.max(last_iters) - np.min(last_iters)
+                reference = np.abs(np.mean(last_iters)) + 1e-12
+                percent_change = (delta / reference) * 100
+                if percent_change < 0.3:
+                    model.logging.info("Solution stagnated and needs a smaller time step!")
+                    return (
+                        SolverStatus.error,
+                        "Solver stagnated and needs a smaller time step",
+                        outer_iter,
+                        )
+            
+            # detect unlikely to converge situations
+            if not self._is_likely_to_converge_exponential(r_norm_history, 
+                                                           self.maxiter, 
+                                                           self.tol, 
+                                                           outer_iter):
+                fail_str =("Solver is unlikely to converge based on "
+                           +"exponential projection, trying a smaller time step")
+                model.logging.info("  " + fail_str)
+                return (
+                    SolverStatus.error,
+                    fail_str,
+                    outer_iter,
+                    )
+            
+            
+            
             J = model.evaluate_jacobian(x)
 
             # Call Linear solver
@@ -339,7 +376,7 @@ class NewtonSolver(object):
                 if self.log_progress or ostream is not None:
                     msg = f"iter: {outer_iter:<4d} norm: {new_norm:<10.2e} alpha: {alpha:<10.2e} time: {time.time() - t0:<8.4f}"
                     if self.log_progress:
-                        logger.log(self.log_level, msg)
+                        model.logging.debug(msg)
                     if ostream is not None:
                         ostream.write(msg + "\n")
             else:
@@ -350,3 +387,54 @@ class NewtonSolver(object):
             "Reached maximum number of iterations: " + str(outer_iter),
             outer_iter,
         )
+    
+    # originally written by AI
+    def _is_likely_to_converge_exponential(self,r_norm_history, max_iter, rnorm_tol, iter_num):
+        """
+        Predict whether exponential convergence will bring r_norm below rnorm_tol
+        within the remaining iterations.
+    
+        Parameters:
+        -----------
+        r_norm_history : np.ndarray
+            1-D array of residual norms
+        max_iter : int
+            Maximum number of iterations
+        rnorm_tol : float
+            Convergence threshold
+        iter_num : int
+            Current iteration number
+    
+        Returns:
+        --------
+        likely_to_converge : bool
+            True if exponential fit predicts convergence below rnorm_tol
+            by max_iter, False otherwise
+        """
+        
+        # Make sure we have at least 10 values
+        if iter_num < 10:
+            return True  # Not enough history to judge
+        
+        # Get last 10 r_norm values (from iter_num-10 to iter_num-1)
+        y = r_norm_history[iter_num - 10:iter_num]
+    
+        # Corresponding x values: [-10, -9, ..., -1]
+        x = np.arange(-10, 0)
+    
+        # Model: y = c * exp(a * x) ⇒ log(y) = log(c) + a * x
+        log_y = np.log(y)
+    
+        # Design matrix for linear least squares: [1, x]
+        A = np.vstack([np.ones_like(x), x]).T
+    
+        # Solve for [log(c), a] using least squares
+        coeffs, *_ = np.linalg.lstsq(A, log_y, rcond=None)
+        log_c, a = coeffs
+    
+        # Predict r_norm at future iteration: y = c * exp(a * x)
+        c = np.exp(log_c)
+        steps_remaining = max_iter - iter_num
+        predicted_rnorm = c * np.exp(a * steps_remaining)
+    
+        return predicted_rnorm < rnorm_tol

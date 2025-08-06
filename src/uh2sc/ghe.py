@@ -48,6 +48,12 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
 
         """
         self._model = model
+        if model is None:
+            self._use_relative_convergence = False
+            self.residual_normalization = None
+        else:
+            self._use_relative_convergence = model._use_relative_convergence
+            self.residual_normalization = model.residual_normalization
         self.dt = dt0
         self.number_elements = number_elements
 
@@ -218,7 +224,9 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
         else:
             # convention heat leaving cavern is negative so we put + so that Q[0]
             # will come out positive.
-            residuals[0] = Q[0] + self._q_axi_cavern
+            residuals[0] = Q[0] + self._q_axi_cavern.sum()
+        if self._use_relative_convergence:
+            residuals[0] = residuals[0]/self.residual_normalization["heat_flux_norm"]
             
         next_comp = self.next_adjacent_components
         if len(next_comp) == 0:
@@ -227,8 +235,11 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
             # flux condition on end extends into the last CV.
             residuals[-2] = Q[-1] - self._Qfunc(Tgvec,self.number_elements-1)
         else:
-            raise NotImplementedError("I'm still working on the case "
-            +"where this is connected to something!!!")
+            raise NotImplementedError("Connecting the GHE to anothe component has not been completed!")
+            
+        if self._use_relative_convergence:
+            residuals[-1] = residuals[-1]/self.residual_normalization["heat_flux_norm"]
+            residuals[-2] = residuals[-2]/self.residual_normalization["heat_flux_norm"]
 
         range_index = self._range_index
 
@@ -241,6 +252,8 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
             
         residuals[1:-2] = np.array([(Q[idx]-(Q[idx+1]+Qg[idx-1])) * self.dt / self.Cg[idx-1]
                     + Tgvec_m1[idx] - Tgvec[idx] for idx in range_index])
+        if self._use_relative_convergence:
+            residuals[1:-2] = residuals[1:-2]/self.residual_normalization["temperature_norm"]
 
         self.Q = Q
         self.Qg = Qg
@@ -299,38 +312,17 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
             m_cavern = xg[cgind[1]-cavern._number_fluids+1:cgind[1]+1]
             
             
-            # (p_cavern, 
-            #  rho_cavern, 
-            #  p_brine, 
-            #  rho_brine, 
-            #  vol_cavern,
-            #  mass_vapor,
-            #  rho_vapor,
-            #  h_vapor,
-            #  p_vapor,
-            #  h_evaporate) = calculate_cavern_pressure(fluid,
-            #                               m_cavern,
-            #                               t_cavern,
-            #                               water,
-            #                               m_brine,
-            #                               t_brine,
-            #                               cavern._VOL_TOTAL,
-            #                               cavern._area_horizontal,
-            #                               cavern._VOL_TOTAL - cavern._initial_volume_brine)
-            try:
-                cavern_volume_estimate = cavern._VOL_TOTAL - cavern._initial_volume_brine
-                (p_cavern,  
-                 vol_cavern) = calculate_cavern_pressure(fluid,
-                                              m_cavern,
-                                              t_cavern,
-                                              water,
-                                              m_brine,
-                                              t_brine,
-                                              cavern._VOL_TOTAL,
-                                              cavern._area_horizontal,
-                                              cavern_volume_estimate)
-            except:
-                breakpoint()
+            cavern_volume_estimate = cavern._VOL_TOTAL - cavern._initial_volume_brine
+            (p_cavern,  
+             vol_cavern) = calculate_cavern_pressure(fluid,
+                                          m_cavern,
+                                          t_cavern,
+                                          water,
+                                          m_brine,
+                                          t_brine,
+                                          cavern._VOL_TOTAL,
+                                          cavern._area_horizontal,
+                                          cavern_volume_estimate)
             
             p_brine = water.p()
 

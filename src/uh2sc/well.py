@@ -46,6 +46,14 @@ class Well(AbstractComponent):
         """
         CP - cool props object
         """
+        # manage convergence type 
+        if model is None:
+            self._use_relative_convergence = False
+            self.residual_normalization = None
+        else:
+            self._use_relative_convergence = model._use_relative_convergence
+            self.residual_normalization = model.residual_normalization    
+            
         self._NUM_EQN = 4 + model.number_fluids
         self._gindices = global_indices
         self.input = well_dict
@@ -251,13 +259,31 @@ class Well(AbstractComponent):
                 # factor 1000 to make mass flow match more important!
                 residuals[0:self._number_fluids] = 1000 * (pipe.mass_rates[0,:] - gmdots)
                 _eqn += self._number_fluids
+                if self._use_relative_convergence:
+                    residuals[0:self._number_fluids] = (
+                        residuals[0:self._number_fluids]
+                        /self.residual_normalization["mass_flow_norm"]
+                        )
+                    
+                # enforce adiabatic change in pressure and temperature.
                 residuals[_eqn] = pipe.temp_fluid[-1] - t_exit[-1]
+                if self._use_relative_convergence:
+                    residuals[_eqn] = residuals[_eqn]/self.residual_normalization["temperature_norm"]
                 _eqn += 1
+                
                 residuals[_eqn] = pipe.pres_fluid[-1] - p_exit[-1]
+                if self._use_relative_convergence:
+                    residuals[_eqn] = residuals[_eqn]/self.residual_normalization["cavern_pressure"]
                 _eqn += 1
+                
                 residuals[_eqn] = pipe.temp_fluid[0] - t_exit[0]
+                if self._use_relative_convergence:
+                    residuals[_eqn] = residuals[_eqn]/self.residual_normalization["temperature_norm"]
                 _eqn += 1
+                
                 residuals[_eqn] = pipe.pres_fluid[0] - p_exit[0]
+                if self._use_relative_convergence:
+                    residuals[_eqn] = residuals[_eqn]/self.residual_normalization["cavern_pressure"]
                 
         if get_independent_vars:
             return () # nothing needed here until the well becomes more complex
@@ -485,6 +511,7 @@ class VerticalPipe(object):
         # input checking. NOTE: needs to be in the input validation instead of
         # here!
         self._well = well
+
         
         if height_change > length:
             raise ValueError("The height change must be equal to or less than the pipe length")

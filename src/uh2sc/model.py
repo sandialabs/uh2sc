@@ -5,6 +5,8 @@ from warnings import warn
 import numpy as np
 import logging
 import yaml
+import uuid
+import time
 
 from matplotlib import pyplot as plt
 import pandas as pd
@@ -16,19 +18,182 @@ from uh2sc.errors import InputFileError, NewtonSolverError, DeveloperError
 from uh2sc.solvers import NewtonSolver
 from uh2sc.abstract import AbstractComponent, ComponentTypes
 from uh2sc.ghe import ImplicitEulerAxisymmetricRadialHeatTransfer
-from uh2sc.utilities import (process_CP_gas_string, 
-                             reservoir_mass_flows, 
+from uh2sc.utilities import (process_CP_gas_string,
+                             reservoir_mass_flows,
                              find_all_fluids,
                              calculate_component_masses,
                              brine_average_pressure)
 from uh2sc.salt_cavern import SaltCavern
 from uh2sc.well import Well, VerticalPipe, PipeMaterial
 from uh2sc.constants import Constants
-from uh2sc.thermodynamics import (density_of_brine_water, 
-                                  brine_saturated_pressure, 
+from uh2sc.thermodynamics import (density_of_brine_water,
+                                  brine_saturated_pressure,
                                   solubility_of_nacl_in_h2o)
 
 
+
+class TimeStepAdvisor:
+    
+    def __init__(self,end_time,min_time_step,min_data_needed=20):
+        self.w_log = None
+        self.b_log = None
+        self.coeffs_time = None
+        self.coeffs_iter = None
+        self.time_mean = None
+        self.time_std = None
+        self.iter_mean = None
+        self.iter_std = None
+        self.is_trained = False
+        self.multipliers = np.linspace(0.5, 2.0, 16)
+        self.data = np.zeros((int(end_time/min_time_step),7))
+        self.data_column_names = ["step_num", 
+                                  "sim_time",
+                                  "time_step", 
+                                  "num_iter", 
+                                  "real_time", 
+                                  "converged", 
+                                  "input_rate_change"]
+        
+        self.end_time = end_time
+        self._min_data_needed = int(min_data_needed)
+
+    def _sigmoid(self, z):
+        z = np.clip(z, -100, 100)
+        return 1 / (1 + np.exp(-z))
+
+    def _fit_logistic_regression(self, X, y, lr=0.01, n_iter=500):
+        m, n = X.shape
+        w = np.zeros(n)
+        b = 0.0
+
+        for _ in range(n_iter):
+            z = X @ w + b
+            p = self._sigmoid(z)
+            error = p - y
+            w -= lr * (X.T @ error) / m
+            b -= lr * np.mean(error)
+
+        return w, b
+
+    def _predict_logistic_proba(self, X):
+        return self._sigmoid(X @ self.w_log + self.b_log)
+
+    def _fit_linear_regression(self, X, y):
+        X_aug = np.column_stack([np.ones(X.shape[0]), X])
+        return np.linalg.lstsq(X_aug, y, rcond=None)[0]
+
+    def _predict_linear(self, X, coeffs):
+        X_aug = np.column_stack([np.ones(X.shape[0]), X])
+        return X_aug @ coeffs
+
+    def fit_and_predict(self, step_num, default_value=0.5):
+        """
+        Fit a simple model and predict what the best time step multiplication
+        factor is 
+        
+        Inputs
+        ======
+        
+        default_value : float : A value between 0.5 and 2.0 that is the
+                   fall back multiplier if the algorithm fails to fit or make
+                   a prediction.
+                   
+        Returns
+        =======
+        
+        multiplier : float : The value predicted to be the best time step
+                  multiplier for the given situation.
+        
+        """
+        
+        fit_worked = self._fit(step_num)
+        if fit_worked:
+            self._predict(default_value)
+        else:
+            return default_value
+        
+
+    def _fit(self,step_num):
+        """
+        Fit models using simulation data up to `end_time`.
+        `data` must be an Nx7 array with columns:
+        step_num, sim_time, time_step, num_iter, real_time, converged, input_rate_change
+        """
+        data = self.data[0:step_num,:]
+        end_time = self.end_time
+        
+        if data.shape[0] < self._min_data_needed:
+            return False
+
+
+        _, sim_time, time_step, num_iter, real_time, converged, input_rate_change = data.T
+        X = np.column_stack([time_step, input_rate_change, sim_time])
+        y_conv = converged
+        y_time = real_time
+        y_iter = num_iter
+
+        # Split 80/20
+        n = len(X)
+        split = int(0.8 * n)
+        X_train = X[:split]
+        y_conv_train = y_conv[:split]
+        y_time_train = y_time[:split]
+        y_iter_train = y_iter[:split]
+
+        # Train models
+        self.w_log, self.b_log = self._fit_logistic_regression(X_train, y_conv_train)
+        self.coeffs_time = self._fit_linear_regression(X_train, y_time_train)
+        self.coeffs_iter = self._fit_linear_regression(X_train, y_iter_train)
+
+        # Store normalization stats
+        self.time_mean = y_time_train.mean()
+        self.time_std = y_time_train.std() + 1e-6
+        self.iter_mean = y_iter_train.mean()
+        self.iter_std = y_iter_train.std() + 1e-6
+        self.X_test = X[split:]
+
+        return True
+
+    def _predict(self, default_value):
+        """
+        Predict optimal time step multiplier using test set from training.
+        Returns a value between 0.5 and 2.0 (or `default_value` if not trained).
+        """
+        if not self.is_trained or self.X_test.shape[0] == 0:
+            return default_value
+
+        try:
+            X_test = self.X_test
+            num_multipliers = len(self.multipliers)
+            num_samples = X_test.shape[0]
+
+            # Broadcasted modifications
+            X_mod = np.broadcast_to(X_test, (num_multipliers, num_samples, 3)).copy()
+            X_mod[:, :, 0] *= self.multipliers[:, None]  # scale time_step
+
+            # Flatten
+            X_flat = X_mod.reshape(-1, 3)
+
+            # Predictions
+            p_conv = self._predict_logistic_proba(X_flat)
+            pred_time = self._predict_linear(X_flat, self.coeffs_time)
+            pred_iter = self._predict_linear(X_flat, self.coeffs_iter)
+
+            # Normalize
+            pred_time = (pred_time - self.time_mean) / self.time_std
+            pred_iter = (pred_iter - self.iter_mean) / self.iter_std
+            denom = pred_time + pred_iter + 1e-6
+
+            utility = p_conv / denom
+            utility_matrix = utility.reshape(num_multipliers, num_samples)
+            mean_utility = utility_matrix.mean(axis=1)
+
+            best_idx = np.argmax(mean_utility)
+            return float(np.clip(self.multipliers[best_idx], 0.5, 2.0))
+
+        except Exception as e:
+            print(f"[WARN] Prediction failed: {e}")
+            return default_value
 
 
 ADJ_COMP_TESTING_NAME = "testing"
@@ -41,14 +206,15 @@ class Model(AbstractComponent):
      called "evaluate_residuals." Current valid components are:
 
      1. Cavern
-     2. Arbitrary number of wells
+     2. Arbitrary number of wells (FOR NOW ITS JUST 1 single pipe WELL!)
      3. Arbitrary number of 1-D axisymmetric heat transfer through the ground
 
      Future versions may include multiple caverns that are connected via
      surface pipes and may include pumps/compressors.
     """
 
-    def __init__(self,inp,single_component_test=False,solver_options=None,get_independent_vars=True,**kwargs):
+    def __init__(self,inp,single_component_test=False,solver_options=None,
+                 get_independent_vars=True,**kwargs):
 
         """
         Construct a combined model of 1) a salt cavern, 2) an arbitrary number
@@ -64,26 +230,38 @@ class Model(AbstractComponent):
                             dict = dict that conforms to the uh2sc schema
 
         """
+        # one day this can be changed to saline water and a salinity equation
+        # that keeps the salinity saturated can be added.
+        self.brine_water = CP.AbstractState("HEOS","Water")
+        
+        if "cool_prop_backend" not in inp["calculation"]:
+            inp["calculation"]["cool_prop_backend"] = "HEOS"
+        
         if solver_options is None:
-            solver_options = {"TOL": 1.0e-2}
-            
+            #TOL will be replaced later on if use_relative_convergence=True
+            solver_options = {"TOL": 1.0e-2,"LOG_PROGRESS":True,
+                              "LOG_LEVEL":logging.WARNING, "MAXITER":100,
+                              "USE_RELATIVE_CONVERGENCE":True}
+        # logging will be setup differently
+        # once self.run is invoked.
+        self.logging = logging
         self.converged_solution_point = False
         self.inputs = self._read_input(inp)
         if isinstance(inp,str):
             self.input_file = inp
         else:
             self.input_file = None
-        time_step = self.inputs["calculation"]["time_step"]
-        
+        time_step = self.inputs["initial"]["time_step"]
+
         nstep = int(self.inputs["calculation"]["end_time"]
                     / time_step
                     + 1)
         self._end_time = self.inputs["calculation"]["end_time"]
-        self._max_time_step = time_step
-        self._min_time_step = 100
+        self._max_time_step = self.inputs["calculation"]["max_time_step"]
+        self._min_time_step = self.inputs["calculation"]["min_time_step"]
         self.time = 0.0
-        self.time_step = self._max_time_step
-        
+        self.time_step = self.inputs["initial"]["time_step"]
+
         self.test_inputs = kwargs
         if len(kwargs) != 0:
             self.is_test_mode = True
@@ -111,24 +289,52 @@ class Model(AbstractComponent):
             elif kwargs["type"] == ComponentTypes(3).name:
                 num_wells = 1
             else:
-                raise ValueError(f"Only valid kwargs['type']:" 
+                raise ValueError(f"Only valid kwargs['type']:"
                         +f"{' '.join([ct.name for ct in ComponentTypes])}")
+                
+        if "USE_RELATIVE_CONVERGENCE" in solver_options:
+            
+            self._use_relative_convergence = solver_options["USE_RELATIVE_CONVERGENCE"]
+            
+        else:
+            self._use_relative_convergence = False
+            self.logging.info("Relative convergence factors not added to each"
+            +" equation. This works but may take longer! You can set the "
+            +"USE_RELATIVE_CONVERGENCE=True in the solver_options input to"
+            +" change this.")       
 
 
         self._build(num_caverns,num_wells,num_ghes)
-
+            
+            
+        if self._use_relative_convergence:
+            solver_options["TOL"] = self.solution_tolerance
+            
+ 
         self.solver = NewtonSolver(solver_options)
 
+        
 
         self._solutions = {}
         
+        self._time_advice = TimeStepAdvisor(self.inputs["calculation"]["end_time"],
+                                            self._min_time_step)
+        # this drives the input_change_rate variable in time_advice. This will
+        # need to change if another way of forcing change in the model (than
+        # changing mass flow in/out is ever added (i.e. compressor pressure level etc...))
+        well_ind = [idx for idx,desc in enumerate(self.xg_descriptions) 
+                    if "Well" in desc and "mass flow for" in desc]
+        if len(well_ind) != 1:
+            raise DeveloperError("There must only be 1 well index. The current"
+                             +" model needs updating if there is more than one or 0!")
+        self._input_ind = well_ind[0]
         if get_independent_vars:
             self._independent_vars = {}
             ind_vars = self.evaluate_residuals(get_independent_vars=get_independent_vars)
             self._independent_vars[self.time] = ind_vars
-        
+
         self._get_independent_vars = get_independent_vars
-        
+
         if len(self.independent_vars_descriptions) != len(self._independent_vars[0.0]):
             raise DeveloperError("The number of independent variables does"
             +" not equal the number of independent variables. Somewhere in "
@@ -138,7 +344,7 @@ class Model(AbstractComponent):
             +"get_independent_vars=True) property and method and figure out"
             +" which component has a mismatch in the number of variables"
             +" returned in comparison to the number of descriptions!")
-        
+
         # used for analytics to assure variables in the model are realistic
         # with respect to actual salt cavern gas dynamics.
         self.components['cavern']._analytics()
@@ -146,7 +352,7 @@ class Model(AbstractComponent):
     def _form_array(self):
         """
         Create a numpy array and column names for model output.
-        
+
         """
 
         keys = np.array(list(self._solutions.keys()))
@@ -165,74 +371,75 @@ class Model(AbstractComponent):
             values_all = np.concatenate([values,values2],axis=1)
         else:
             values_all = values
-            
+
         out_arr = np.concat([keys.reshape([len(keys),1]),values_all],axis=1)
         return column_names, out_arr
-    
+
     def write_results(self,filename="uh2sc_results.csv"):
         """
-        
+
         Write out results as a CSV
-        
+
         """
         column_names, out_arr = self._form_array()
         np.savetxt(filename, out_arr, header=",".join(column_names), delimiter=',')
-    
-    @property
+
     def dataframe(self, relative_time=False):
         """
         Provide results as a dataframe
-        
+
         Inputs:
         =======
-        
+
         relative_time: bool: optional : Default =False
               If True, then time is just a value equal to
               the number of seconds since the simulation began
               If False, then the index is based on date-time stamps.
-        
+
         """
         # get the results
         column_names, out_arr = self._form_array()
         start_date_str = self.inputs['initial']['start_date']
 
-        # process for dataframe considerations        
+        # process for dataframe considerations
         if relative_time:
             index = out_arr[:,column_names.index("Time (s)")]
         else:
             # date considered.
             start_date = pd.to_datetime(start_date_str)
             delta = pd.to_timedelta(out_arr[:,column_names.index("Time (s)")],unit='s')
-            
+
             index = start_date + delta
-        
+
         df = pd.DataFrame(out_arr,index=index,columns=column_names)
-        
+
         return df
-        
+
     @property
     def independent_vars(self):
         return self._independent_vars
-    
-    
+
+
     @property
     def solutions(self):
         return self._solutions
-    
+
     @property
     def component_type(self):
         return "model"
 
-    def run(self,new_inp=None):
+    def run(self,new_inp=None,log_file=None):
         """
         inputs:
-            new_inp : dict - an input object that, if present, resets 
+            new_inp : dict - an input object that, if present, resets
                       all of the inputs but does not reinitialize the
-                      model. This way, the model can be commanded to change 
+                      model. This way, the model can be commanded to change
                       mass flows and such on the fly while maintaining the
                       current state of the cavern.
-        
+
         """
+        sim_start_time = time.perf_counter()
+        
         if new_inp is not None:
             raise NotImplemented("The ability to add new input "
                                  +"has not been completed!")
@@ -250,69 +457,147 @@ class Model(AbstractComponent):
                     new_well = Well(component_name,new_inp['wells'][component_name],self, component.global_indices)
                     self.components[component_name] = new_well
         
-        
+        if log_file is not None:
+            # Remove the console handler from the root logger
+            root_logger = logging.getLogger()
+            root_logger.setLevel(self.solver._options["LOG_LEVEL"])
+            
+            RUN_ID = str(uuid.uuid4())[:8]
+            logger = logging.getLogger(f"uh2sc logger run {RUN_ID}")
+            logger.propagate = False
+            
+            # create a file handler
+            file_handler = logging.FileHandler(log_file)
+            formatter = logging.Formatter("%(asctime)s - %(run_id)s - %(levelname)s - %(message)s")
+            file_handler.setFormatter(formatter)
+            
+            # Add the filter that injects the run_id
+            class RunIDFilter(logging.Filter):
+                def filter(self, record):
+                    record.run_id = RUN_ID
+                    return True
+            
+            file_handler.addFilter(RunIDFilter())
+            logger.addHandler(file_handler)
+            
+            logger.setLevel(logging.DEBUG)
+            
+            self.logging = logger
+            self.logging.info(f"  Begin of run {RUN_ID}")
+            
+        else:
+            self.logging = logging
+
         # record initial state
         self._solutions[self.time] = deepcopy(self.get_x())
-        
+        self.time_m1 = self.time
+
+        step_num = 0
         while self.time < self._end_time:
             x_org = self.get_x()
 
-            logging.info(f"UH2SC model beginning calculations for time={self.time}.")
+            self.logging.info(f"UH2SC model beginning calculations for time={self.time}.")
             # solve the current time step
             
+            stime = time.perf_counter()
+
             tup = self.solver.solve(self)
             
+            etime = time.perf_counter()
+            
+            elapsed = etime - stime
             
             solver_converged = bool(tup[0])
+            
             if solver_converged:
                 # shift the time
-                
-                
                 if 'cavern' in self.components:
                     if hasattr(self.components['cavern'], "troubleshooting"):
                         print(self.time)
-                
+
                 # update the state of the model
                 self.shift_solution()
-                
+
+                self.logging.info(f"Completed time {self.time} with time step "
+                                  +f"{self.time_step}. The simulation is "
+                                  +f"{100 * self.time/self._end_time}% complete.")
+
                 # shift time
                 self.time += self.time_step
-                
+
                 # gather the results
                 self._solutions[self.time] = deepcopy(self.get_x())
                 
+            
+            input_rate_change = ((self._solutions[self.time][self._input_ind] 
+                                 - self._solutions[self.time_m1][self._input_ind])/self.time_step)
+            
+            self._time_advice.data[step_num,:] = step_num,self.time,self.time_step,tup[-1],elapsed,tup[0],input_rate_change
+
+            if solver_converged:
+                
+                self.time_m1 = self.time
+
+
                 # gather independent variables if requested.
                 if self._get_independent_vars:
                     self._independent_vars[self.time] = deepcopy(
                         self.evaluate_residuals(get_independent_vars=
                                                 self._get_independent_vars))
-                
-                
-                
-                
+
                 # increase the time step if it has shrunk
                 if self.time_step < self._max_time_step:
-                    proposed_time_step = 1.5 * self.time_step
+                    
+                    if step_num > 20:
+                        breakpoint()
+                        self._time_advice.fit_and_predict(step_num,default_value=1.5)
+                        proposed_time_step_mult = self._time_advice.predict(default_value=1.5)
+                    else:
+                        proposed_time_step_mult = 1.5
+                    
+                    proposed_time_step = proposed_time_step_mult * self.time_step
                     if proposed_time_step < self._max_time_step:
                         self.time_step = proposed_time_step
                     else:
                         self.time_step = self._max_time_step
-            
+
             else:
+                self.logging.info(f"Failed to complete {self.time} with time"
+                                  +f" step {self.time_step}. Reducing time step"
+                                  +f" to {0.5*self.time_step}")
+                
                 if self.time_step > self._min_time_step:
-                    # try resetting and trying a smaller time step
-                    self.load_var_values_from_x(x_org)
-                    self.time_step = 0.5*self.time_step
                     
+                    
+                    if step_num > 20:
+                        breakpoint()
 
                     
+                        self._time_advice.fit(step_num)
+                        proposed_time_step_mult = self._time_advice.predict(default_value=0.5)
+                    else:
+                        proposed_time_step_mult = 0.5
+                    
+                    self.time_step = proposed_time_step_mult*self.time_step
+                    
+                    # try resetting and trying a smaller time step
+                    self.load_var_values_from_x(x_org)
+
+
                 else:
                     msg = tup[1]
-                    raise NewtonSolverError("The Newton solver returned an" 
+                    raise NewtonSolverError("The Newton solver returned an"
                             +f" error for time {self.time} and the time step has"
                             +" reached the minimum allowed value. The solver"
                             +f" message is: {msg}")
-
+            step_num += 1
+        
+        sim_end_time = time.perf_counter()
+        elapsed = sim_end_time - sim_start_time
+        self.logging.info(f"Simulation complete in {elapsed:.4f}"
+                     +f" seconds ({elapsed/3600:.4f} hours)")
+        
+        self.logging.propagate = True
 
     @property
     def next_adjacent_components(self):
@@ -354,7 +639,7 @@ class Model(AbstractComponent):
         residuals = []
         if get_independent_vars:
             ind_vars = []
-            
+
         if x is None:
             for _cname, component in self.components.items():
 
@@ -399,42 +684,42 @@ class Model(AbstractComponent):
     def load_var_values_from_x(self, xg_new):
         for cname, component in self.components.items():
             component.load_var_values_from_x(xg_new)
-            
-            
+
+
     def shift_solution(self):
         for cname, component in self.components.items():
             component.shift_solution()
-    
+
     @property
     def independent_vars_descriptions(self):
         """
-        gives a 1:1 description of each independent variable so that 
-        a user can easily find what variables mean and column names 
+        gives a 1:1 description of each independent variable so that
+        a user can easily find what variables mean and column names
         can be constructed for global output in a model.
         """
         desc = []
         for cname, component in self.components.items():
             desc += component.independent_vars_descriptions
-        
+
         return desc
-            
+
     def equations_list(self):
         e_list = []
         for cname, component in self.components.items():
             e_list += component.equations_list()
         return e_list
 
-    def plot_solution(self,variables):
+    def plot_solution(self,variables,show=False):
         """
         Inputs:
             variables: list: of either integers or strings, strings must
                  be in self.xg_descriptions
-        
-        
+
+
         """
         xgd = self.xg_descriptions
         num_var = len(xgd)
-        
+
         axd = {}
         figd = {}
         for variable in variables:
@@ -442,7 +727,7 @@ class Model(AbstractComponent):
                 if variable < len(xgd) and variable > -1:
                     variable_str = self.xg_descriptions[variable]
                 else:
-                    raise ValueError(f"Only integers less than the number "
+                    raise ValueError("Only integers less than the number "
                                      +f"of variables {num_var} are allowed,"
                                      +f" you entered {variable}!")
             else:
@@ -454,26 +739,26 @@ class Model(AbstractComponent):
                                      +" is not in the variable list "
                                      +"model.xg_descriptions")
             fig,ax = plt.subplots(1,1,figsize=(5,5))
-            
+
             idx = self.xg_descriptions.index(variable_str)
-            
-            values = np.array([[time,solution[idx]] for time,solution 
+
+            values = np.array([[time,solution[idx]] for time,solution
                                in self._solutions.items()])
-            
+
             ax.plot(values[:,0],values[:,1],label=variable_str)
             ax.grid("on")
             ax.set_xlabel("time (s)")
             ax.set_ylabel(variable_str)
-            
-            
+
+
             axd[variable_str] = ax
             figd[variable_str] = fig
-        
-            plt.show()
-            
+            if show:
+                plt.show()
+
         return figd, axd
-        
-        pass    
+
+        pass
 
     def _build(self,num_caverns,num_wells,num_ghes):
         """
@@ -528,7 +813,7 @@ class Model(AbstractComponent):
         xg = []
         num_var = {}
         components = {}
-        
+
         # assigns self.fluids for reservoirs from mdot valves and the initial
         # cavern state (which changes unless every gas is the same)
         # also assigns self.fluid_components which is the list of all pure fluids
@@ -543,7 +828,7 @@ class Model(AbstractComponent):
             self._bounds_characteristics()
             self._build_cavern(xg_descriptions,xg,components)
             num_var["caverns"] = len(xg_descriptions)
-            
+
         else:
             num_var["caverns"] = 0
         if num_wells != 0:
@@ -567,7 +852,7 @@ class Model(AbstractComponent):
 
         if not self.is_test_mode:
             self._connect_components()
-            
+
         self.load_var_values_from_x(self.xg)
 
 
@@ -628,7 +913,7 @@ class Model(AbstractComponent):
                                                             1.0)
                 # set the constant time step
 
-                t_step = self.inputs["calculation"]["time_step"]
+                t_step = self.time_step
 
             # begin global indice
             beg_idx = len(xg)
@@ -648,7 +933,7 @@ class Model(AbstractComponent):
             #end of global indices for this component
             end_idx = len(xg)-1
 
-            
+
             self.xg = xg
             self.xg_descriptions = x_desc
 
@@ -667,22 +952,22 @@ class Model(AbstractComponent):
                   global_indices=(beg_idx,end_idx),
                   model=self)
 
-    
+
 
     def _build_cavern(self,x_desc,xg,components):
         """
         Build the cavern (no multi-cavern capability yet!)
-        
+
         """
         if self.is_test_mode:
             fluid_name = self.inputs["initial"]["fluid"]
             self.fluids = {}
 
-            
+
             comp, massfracs, compSRK, fluid = process_CP_gas_string(fluid_name)
-            
+
             fluid.update(CP.PT_INPUTS,self.inputs['initial']['pressure'],self.inputs['initial']['temperature'])
-            
+
             self.fluids["cavern"] = fluid
             self.molar_masses = {}
             for pfluid in fluid.fluid_names():
@@ -690,34 +975,34 @@ class Model(AbstractComponent):
                 tempfluid.set_mass_fractions([1.0])
 
                 self.molar_masses[pfluid] = tempfluid.molar_mass()
-                
+
             self.test_inputs["r_radial"] = (np.log(self.test_inputs['r_out']
                                                    /(self.inputs['cavern']['diameter']/2.0))
-                                            / (2 * np.pi * self.inputs["cavern"]["height"] 
+                                            / (2 * np.pi * self.inputs["cavern"]["height"]
                                                * self.test_inputs['salt_therm_cond']))
             if '&' in fluid_name:
                 fluid_str = "H2[1.0]&Methane[0.0]"  # fill methane cavern with new hydrogen
                 rcomp, rmassfracs, rcompSRK, rfluid = process_CP_gas_string(fluid_str)
                 rfluid.specify_phase(CP.iphase_gas)
                 rfluid.update(CP.PT_INPUTS, 20e6, 310)
-                
+
                 self.fluids['cavern_well'] = rfluid
 
         else:
             prev_components = self.inputs['wells']
             ghe_name = self.inputs['cavern']['ghe_name']
             next_components = {ghe_name:self.inputs["ghes"][ghe_name]}
-        
+
         cavern = self.inputs["cavern"]
         beg_idx = len(xg)
-        
+
 
         #pure water for brine calculations
         water = CP.AbstractState("HEOS","Water")
         water.update(CP.PT_INPUTS,self.inputs['initial']['pressure'],self.inputs['initial']['liquid_temperature'])
         water.set_mole_fractions([1.0])
         self.water = water
-        
+
         #geometry
         area_horizontal = np.pi * self.inputs['cavern']['diameter']**2/4
         area_vertical = np.pi * self.inputs['cavern']['diameter'] * self.inputs["cavern"]["height"]
@@ -727,55 +1012,55 @@ class Model(AbstractComponent):
         height_total = self.inputs["cavern"]["height"]
         height_brine = self.inputs['initial']['liquid_height']
         t_brine = self.inputs['initial']['liquid_temperature']
-        
+
         # repeat this to reach the correct brine density and pressure.
         (p_brine, solubility_brine,
          rho_brine) = brine_average_pressure(self.fluids['cavern'],water,height_total,height_brine,t_brine)
         water.update(CP.PT_INPUTS,p_brine,t_brine)
         (p_brine, solubility_brine,
          rho_brine) = brine_average_pressure(self.fluids['cavern'],water,height_total,height_brine,t_brine)
-        
+
         vol_cavern = (height_total - height_brine) * area_horizontal
         m_cavern = vol_cavern * self.fluids['cavern'].rhomass()
-        
-        
+
+
         # add all cavern variables
         x_desc += ["Cavern gas temperature (K)"]
         xg += [self.inputs["initial"]["temperature"]]
-        
+
         x_desc += ["Cavern wall temperature (K)"]
         xg += [self.inputs["initial"]["temperature"]]
-        
+
         #x_desc += ["Cavern pressure at average height from cavern top to liquid surface (Pa)"]
         #xg += [self.inputs["initial"]["pressure"]]
-        
+
         x_desc += ["Brine mass (kg)"]
         xg += [rho_brine * vol_brine]
-        
+
         x_desc += ["Brine temperature (K)"]
         xg += [self.inputs["initial"]["temperature"]]
-        
+
         #x_desc += ["Brine wall temperature (K)"]
         #xg += [self.inputs["initial"]["temperature"]]
-        
+
         # mass balance for each gaseous fluid.
         mass_dict = calculate_component_masses(self.fluids['cavern'],
                                                mass=m_cavern,
                                                )
-            
+
         for m_pure, fname in zip(mass_dict,self.fluids['cavern'].fluid_names()):
             xg += [m_pure]
             x_desc += [f"Cavern {fname} mass (kg)"]
-        
+
         end_idx = len(xg)-1  # minus one because of 0 indexing!
-        
+
         self.xg = xg
         self.xg_description = x_desc
-        
+
         components["cavern"] = SaltCavern(self.inputs,global_indices=
                                           (beg_idx,end_idx),
                                           model=self)
-        
+
 
     def _build_wells(self,x_desc,xg,components):
         """
@@ -783,26 +1068,26 @@ class Model(AbstractComponent):
         the number of control volumes in the well being considered!
         It only assigns input and output values as variables equivalent
         to a single control volume
-        
+
         """
-        
+
         if len(self.test_inputs) != 0:
             find_all_fluids(self)
-            
+
             self.test_inputs["cavern"] = {"cavern":SaltCavern(self.inputs,global_indices=
                                               (-2,-1),
                                               model=self)}
-            
+
         else:
             pass
             # this is undeveloped
-        
+
         wells = self.inputs["wells"]
-        
-        
-        
+
+
+
         for wname, well in wells.items():
-            numcv = float(self.inputs['wells'][wname]['pipe_lengths'][0] / 
+            numcv = float(self.inputs['wells'][wname]['pipe_lengths'][0] /
                           self.inputs['wells'][wname]['control_volume_length'])
             if numcv != 1.0:
                 raise NotImplementedError("Only one control volume is allowed!"
@@ -811,16 +1096,16 @@ class Model(AbstractComponent):
                                           +" future version will include "
                                           +"multiple control volumes along "
                                           +"the pipes with heat transfer losses/gains")
-            
+
             len_pipe_diameters = len(well["pipe_diameters"])
             beg_idx = len(xg)
-            
-            if (well["ideal_pipes"] 
+
+            if (well["ideal_pipes"]
                 # IDEAL WELL VARIABLE SETUP!
-                and (len_pipe_diameters==4 
-                and well["pipe_diameters"][0]==0.0 
+                and (len_pipe_diameters==4
+                and well["pipe_diameters"][0]==0.0
                 and well["pipe_diameters"][1] == 0.0)):
-                
+
                 for vname, valve in well["valves"].items():
 
                     #NOTE: The current implementation does not include
@@ -829,28 +1114,28 @@ class Model(AbstractComponent):
 
                     valve_inflow, cavern_inflow = reservoir_mass_flows(self, 0.0)
                     mdot = valve_inflow[wname][vname]
-                    
+
                     molefracs = self.fluids[wname][vname].get_mole_fractions()
                     pure_fluid_names = self.fluids[wname][vname].fluid_names()
                     massflows = calculate_component_masses(
                         self.fluids[wname][vname],
                         mdot.sum())
-                    
+
                     for massflow, pname in zip(massflows, pure_fluid_names):
                         xg += [massflow]
                         x_desc += [f"Well `{wname}` valve `{vname}` mass flow for {pname}"]
-                    
+
                     if mdot.sum() > 0.0:
                         initial_temperature = valve["reservoir"]["temperature"]
                         initial_pressure = valve["reservoir"]["pressure"]
                     else:
                         initial_temperature = self.inputs["initial"]["temperature"]
                         initial_pressure = self.inputs["initial"]["pressure"]
-                    
-                    
+
+
                     temp_mat = PipeMaterial(well["pipe_roughness_ratios"][0],
                                             well["pipe_thermal_conductivities"][0])
-                    
+
                     # only creating this here so that the adiabatic static
                     # column function can be used.
                     temp_vp = VerticalPipe(None,
@@ -868,55 +1153,55 @@ class Model(AbstractComponent):
                                            well["pipe_diameters"][3],
                                            1,
                                            well["pipe_total_minor_loss_coefficients"])
-                    
+
                     temp_fluid,pres_fluid = temp_vp.initial_adiabatic_static_column(
                         initial_temperature, initial_pressure, mdot)
-                    
+
                     if isinstance(mdot,(float,int)):
                         inflow = mdot > 0.0
                     elif isinstance(mdot, np.ndarray):
                         inflow = mdot.sum() > 0.0
                     else:
                         raise ValueError("mdot must be an array or numeric!")
-                    
+
                     if inflow:
-                    
-                        xg += [valve["reservoir"]["temperature"]] 
+
+                        xg += [valve["reservoir"]["temperature"]]
                         x_desc += ["Valve reservoir temperature (K)"]
                         xg += [valve["reservoir"]["pressure"]]
                         x_desc += ["Valve reservoir pressure (Pa)"]
-                    
+
                         xg += [temp_fluid[-1]]
                         x_desc += ["Pipe entrance temperature to cavern (K)"]
                         xg += [pres_fluid[-1]]
                         x_desc += ["Pipe entrance pressure to cavern (K)"]
-                        
+
                     else:
-                        
-                        xg += [temp_fluid[0]] 
+
+                        xg += [temp_fluid[0]]
                         x_desc += ["Valve reservoir temperature (K)"]
                         xg += [pres_fluid[0]]
                         x_desc += ["Valve reservoir pressure (Pa)"]
-                    
+
                         xg += [self.inputs['initial']['temperature']]
                         x_desc += ["Pipe entrance temperature to cavern (K)"]
                         xg += [self.inputs['initial']['pressure']]
                         x_desc += ["Pipe entrance pressure to cavern (K)"]
-                        
 
-                
+
+
             else:
                 raise NotImplementedError("We only have implemented ideal"
                                           +" wells with 1 pipe!")
             end_idx = len(xg)-1
-            
+
             self.xg = xg
             self.xg_descriptions = x_desc
-            
+
             components[wname] = Well(wname, well, self, (beg_idx,end_idx))
-            
+
     def _connect_components(self):
-        
+
         # cavern-ghe
         cghe = self.inputs['cavern']['ghe_name']
         self.components['cavern']._next_components = {}
@@ -924,7 +1209,7 @@ class Model(AbstractComponent):
         self.components[cghe]._prev_components = {}
         self.components[cghe]._next_components = {} # there are no next for GHE!
         self.components[cghe]._prev_components['cavern'] = self.components['cavern']
-        
+
         # well-cavern
         self.components['cavern']._prev_components = {}
         for comp_name, comp in self.components.items():
@@ -932,12 +1217,12 @@ class Model(AbstractComponent):
                 self.components['cavern']._prev_components[comp_name] = comp
                 self.components[comp_name]._next_components = {}
                 self.components[comp_name]._next_components['cavern'] = self.components['cavern']
-                # Currently there are no prev components, in the future, maybe 
+                # Currently there are no prev components, in the future, maybe
                 # we could make this a pipe that leads to a compressor or leads
                 # to a network of sub-surface storage salt caverns.
                 self.components[comp_name]._prev_components = {}
-                
-        
+
+
     def _assign_max_from_adj_comp(self,adj_comps,name,multfact,arrind=None):
         val = 0.0
 
@@ -957,7 +1242,7 @@ class Model(AbstractComponent):
                 val = np.max(np.array([val,adjacent_comp[name]*multfact]))
 
         return val
-    
+
 
     def _validate(self):
         """
@@ -1014,14 +1299,14 @@ class Model(AbstractComponent):
         if ghe_name == self.inputs["cavern"]["ghe_name"]:
             adj_comp.append(("cavern",self.inputs["cavern"]))
         return adj_comp
-    
+
     def _bounds_characteristics(self):
         """
         These characteristic pressures and temperatures (which can) be
         controlled via user inputs provide a way for warnings and then
         an error to be thrown if the cavern simulation is outside of operational
         limits.
-        
+
         """
         self._temperature_bounds = {"minor_warning":[None,None],
                                     "major_warning":[None,None],
@@ -1034,16 +1319,16 @@ class Model(AbstractComponent):
                                     "error":None}
 
         opres = self.inputs['cavern']['overburden_pressure']
-        
+
         if "min_operational_temperature" in self.inputs["cavern"]:
             self._temperature_bounds["minor_warning"][0] = self.inputs["cavern"]["min_operational_temperature"]
         else:
             self._temperature_bounds["minor_warning"][0] = 295
         if "max_operational_temperature" in self.inputs["cavern"]:
-            self._temperature_bounds["minor_warning"][1] = self.inputs["cavern"]["min_operational_temperature"]
+            self._temperature_bounds["minor_warning"][1] = self.inputs["cavern"]["max_operational_temperature"]
         else:
-            self._temperature_bounds["minor_warning"][1] = 330
-            
+            self._temperature_bounds["minor_warning"][1] = 340
+
         if "min_operational_pressure_ratio" in self.inputs["cavern"]:
             self._pressure_bounds["minor_warning"][0] = self.inputs["cavern"]["min_operational_pressure_ratio"]*opres
         else:
@@ -1052,43 +1337,50 @@ class Model(AbstractComponent):
             self._pressure_bounds["minor_warning"][1] = self.inputs["cavern"]["max_operational_pressure_ratio"] *opres
         else:
             self._pressure_bounds["minor_warning"][1] = 0.8 * opres
-            
+
         self._pressure_bounds["major_warning"] = [0.95*self._pressure_bounds["minor_warning"][0],
                                          1.05 * self._pressure_bounds["minor_warning"][1]]
         self._pressure_bounds["error"] = [0.9*self._pressure_bounds["minor_warning"][0],
                                          1.1 * self._pressure_bounds["minor_warning"][1]]
 
-        
+
         self._temperature_bounds["major_warning"] = [self._temperature_bounds["minor_warning"][0]-10,
                                                      self._temperature_bounds["minor_warning"][1]+10]
         self._temperature_bounds["error"] = [self._temperature_bounds["minor_warning"][0]-20,
                                                      self._temperature_bounds["minor_warning"][1]+20]
-        
+
         # flow limits
         if "max_volume_change_per_day" in self.inputs["cavern"]:
             max_vol_fraction = self.inputs["cavern"]["max_volume_change_per_day"]
         else:
             max_vol_fraction = 0.1
-        
+
         cfl = self.fluids['cavern']
-        
+
         temp = cfl.T()
         pres = cfl.p()
-        
-        
+
+
         cfl.update(CP.PT_INPUTS,self._pressure_bounds["minor_warning"][0],
                                 self._temperature_bounds["minor_warning"][0])
-        
+
         # calculate total volume
         total_volume = 0.25 * np.pi * ((self.inputs['cavern']['diameter']) ** 2
                                    ) * self.inputs['cavern']['height']
-        
+
         mass_min = total_volume * cfl.rhomass()
-        
+        energy_min = cfl.hmass() * mass_min
+
         cfl.update(CP.PT_INPUTS,self._pressure_bounds["minor_warning"][1],
                                 self._temperature_bounds["minor_warning"][1])
-        
+
         mass_max = total_volume * cfl.rhomass()
+        energy_max = cfl.hmass() * mass_max
+        
+        energy_norm = energy_max - energy_min
+        mass_norm = mass_max - mass_min
+        pressure_norm = self._pressure_bounds["error"][1] - self._pressure_bounds["error"][0]
+        temperature_norm = self._temperature_bounds["error"][1] - self._temperature_bounds["error"][0]
         
         self.cavern_working_mass = mass_max - mass_min
         self.cavern_max_mass = mass_max
@@ -1098,18 +1390,47 @@ class Model(AbstractComponent):
         self._mass_flow_upper_limit["major_warning"] = 1.05 * self._mass_flow_upper_limit["minor_warning"]
         self._mass_flow_upper_limit["error"] = 1.1 * self._mass_flow_upper_limit["minor_warning"]
         
-        cfl.update(CP.PT_INPUTS, pres, temp)
+        mass_flow_norm = self._mass_flow_upper_limit["error"]
         
-        self.bounds_checks = [self._temperature_bounds, 
-                              self._pressure_bounds, 
+        flux_norm = mass_flow_norm * cfl.hmass()
+        
+        # brine norms
+        brine_volume = (0.25 * np.pi * self.inputs['cavern']['diameter'] ** 2
+                        * self.inputs['initial']['liquid_height'])
+        _bw = self.brine_water
+        _bw.update(CP.PT_INPUTS,self._pressure_bounds["error"][1],self._temperature_bounds["error"][1])
+        brine_mass = _bw.rhomass() * brine_volume
+        brine_energy = brine_mass * _bw.hmass()
+        
+        extra_factor = 1
+        self.residual_normalization = {"cavern_gas_energy":extra_factor * flux_norm * self.inputs['calculation']['max_time_step'],
+                                       "cavern_gas_mass":extra_factor * mass_flow_norm * self.inputs['calculation']['max_time_step'],
+                                       "cavern_pressure":extra_factor * pressure_norm,
+                                       "temperature_norm":extra_factor * temperature_norm,
+                                       "heat_flux_norm":extra_factor * flux_norm,
+                                       "mass_flow_norm":extra_factor * mass_flow_norm,
+                                       "brine_mass": extra_factor * mass_flow_norm * self.inputs['calculation']['max_time_step'],
+                                       "brine_energy": extra_factor * flux_norm * self.inputs['calculation']['max_time_step']}
+
+        if "solution_tolerance" in self.inputs["calculation"]:
+            tol_factor = self.inputs["calcualtion"]["solution_tolerance"]
+        else:
+            tol_factor = 1.0e-5
+
+        self.solution_tolerance = np.min(tol_factor * np.array([energy_min /energy_norm,
+                                                         mass_min/mass_norm,
+                                                         self._temperature_bounds["error"][0]/temperature_norm,
+                                                        self._pressure_bounds["error"][0]/pressure_norm,
+                                                        1.0]))
+        
+
+
+
+        cfl.update(CP.PT_INPUTS, pres, temp)
+
+        self.bounds_checks = [self._temperature_bounds,
+                              self._pressure_bounds,
                               self._mass_flow_upper_limit]
         
         
         
-        
-        
-        
-        
-    
-
-

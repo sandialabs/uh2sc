@@ -36,3 +36,7 @@ tests/data.csv
 tests/salt_cavern_test_profile.txt
 tests/test_data/.DS_Store
 tests/uh2sc_results.csv
+.coverage*
+tests/2008_Nieland_Fig15_12_cycles_per_year._results.csv
+tests/nielson_verification_H2_30.log
+tests/verification_test_profile_08042025.txt

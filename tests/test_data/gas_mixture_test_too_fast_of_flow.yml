@@ -45,8 +45,10 @@ initial:  #
   start_date: "2023-01-01" # Must be in iso format "YYYY-MM-DD"
   liquid_height: 1.0 # in meters
   liquid_temperature: 320 # ussually 2-4 C cooler than the gas
+  time_step: 43200
 calculation:
-  time_step: 43200 # seconds - 20 minute time steps
+  max_time_step: 43200
+  min_time_step: 1200
   end_time: 86400 # ends after one day
   run_parallel: false
 heat_transfer:

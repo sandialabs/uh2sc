@@ -19,7 +19,8 @@ dependencies = [
      "rich-click",
      "scikit-learn",
      "joblib",
-     "matplotlib"
+     "matplotlib",
+     "plotly"
 ]
 
 description = "This package simulates salt caverns with hydrogen and other gas mixtures"

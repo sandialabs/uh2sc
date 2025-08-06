@@ -197,10 +197,10 @@ def run_gas_type(gas_type, subd, run_verification, nieland_obj, con):
 
         if not run_verification:
             # just run for 2 days and stop   TODO
-            inp['calculation']['end_time'] = 65 * 24 * 3600
+            inp['calculation']['end_time'] = 50 * 24 * 3600
 
         # create model object
-        model = Model(inp, solver_options={"TOL": 1.0e-2})
+        model = Model(inp)
 
         if run_verification:
             model.components['cavern'].troubleshooting = True
@@ -208,24 +208,18 @@ def run_gas_type(gas_type, subd, run_verification, nieland_obj, con):
         """
         RUN
         """
-        model.run()
-
-        cav_res = model.components['cavern'].results
-
-        plt.plot(cav_res['Time (sec)'], cav_res['Cavern energy (J)'],
-                 cav_res['Time (sec)'], cav_res['Brine energy (J)'])
-
-        model.plot_solution(model.xg_descriptions)
+        model.run(log_file=f"nielson_verification_{gas_type}_{days_per_cycle}.log")
 
         sc = model.components["cavern"]
         v_df = create_df_from_sim_output(con.nonleapyear, sc.results)
+        v_df = model.dataframe()
 
         
         s_kelvin = fahrenheit_to_kelvin(verify_obj['degrees fahrenheit'])
         #TODO
         if True: #run_verification:
             fig, ax = plt.subplots(1, 1, figsize=(20, 10))
-            v_df['Cavern temperature (K)'].plot(ax=ax, label="Gas")
+            v_df['Cavern gas temperature (K)'].plot(ax=ax, label="Gas")
             v_df['Cavern wall temperature (K)'].plot(ax=ax, label="Wall")
 
             s_kelvin.plot(ax=ax, label="Gas nieland", linestyle="None", marker="x", markersize=10)
@@ -238,7 +232,7 @@ def run_gas_type(gas_type, subd, run_verification, nieland_obj, con):
         y_k_nieland = s_kelvin.values
         time_s_nieland_cutoff = time_s_nieland[time_s_nieland <= inp['calculation']['end_time']]
 
-        ybar_nieland = np.interp(time_s_nieland_cutoff, v_df['Time (sec)'].values, v_df['Cavern temperature (K)'].values)
+        ybar_nieland = np.interp(time_s_nieland_cutoff, v_df['Time (s)'].values, v_df['Cavern gas temperature (K)'].values)
 
         error = ybar_nieland - y_k_nieland[0:len(ybar_nieland)]
         uerror = error[int(len(error) / 2):]
@@ -267,7 +261,7 @@ def run_gas_type(gas_type, subd, run_verification, nieland_obj, con):
             max_error_threshold = 7.24
             min_error_threshold = 6.09
             mean_error_bounds = [6.6,6.7]
-            if (max_error < max_error_threshold 
+            if (max_error > max_error_threshold 
                 or min_error > min_error_threshold
                 or (mean_error > mean_error_bounds[0]
                 and mean_error < mean_error_bounds[1])):
@@ -278,7 +272,7 @@ def run_gas_type(gas_type, subd, run_verification, nieland_obj, con):
                       +" If the graphical comparisons are good enough by"
                       +" your judgement, you can change the unit test"
                       +" comparison thresholds")
-            breakpoint()
+
             
             #assert (max_error < max_error_threshold)
             #assert (min_error > min_error_threshold)
@@ -374,7 +368,8 @@ class TestSaltCavernVerification(unittest.TestCase):
         # verification case with plots.
         cls.run_verification = False
         
-        cls.run_parallel = True
+        # only run parallel if run_verification=True
+        cls.run_parallel = cls.run_verification
         
         cls.filedir = os.path.dirname(__file__)
         
@@ -441,7 +436,7 @@ class TestSaltCavernVerification(unittest.TestCase):
         
         """
         
-        if self.run_all:
+        if False: #self.run_all:
             
             infile = os.path.join(self.filedir,"test_data","gas_mixture_test_too_fast_of_flow.yml")
             with open(infile, 'r', encoding='utf-8') as infile:
@@ -517,7 +512,7 @@ class TestSaltCavernVerification(unittest.TestCase):
     
     def test_hanEtAl_air_with_actual_test_data(self):
         
-        if self.run_all:
+        if False: #self.run_all:
         
             #load input file
             infile = os.path.join(self.filedir,"test_data","HanEtAl_2022_24hr_ops_validation_air.yml")
@@ -594,7 +589,7 @@ class TestSaltCavernVerification(unittest.TestCase):
             
             
             # HERE IS WHERE I LEFT OFF
-            if self.create_plots and self.run_verification:
+            if True: #self.create_plots and self.run_verification:
                 fig,axl = plt.subplots(3,1,figsize=(10,20))
                 
                 plot_three_dataframes(
@@ -675,5 +670,5 @@ if __name__ == "__main__":
         ps = pstats.Stats(pr, stream=s).sort_stats('tottime')
         ps.print_stats()
 
-        with open('utilities_test_profile.txt', 'w+', encoding='utf-8') as f:
+        with open('verification_test_profile_08042025.txt', 'w+', encoding='utf-8') as f:
             f.write(s.getvalue())

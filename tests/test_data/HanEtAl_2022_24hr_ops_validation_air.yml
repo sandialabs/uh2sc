@@ -48,8 +48,10 @@ initial:  #
   start_date: "2023-01-01" # Must be in iso format "YYYY-MM-DD"
   liquid_height: 0.1 # brine is not needed here.
   liquid_temperature: 313.5 # ussually 2-4 C cooler than the gas
+  time_step: 300
 calculation:
-  time_step: 300 # 5 minute time steps.
+  max_time_step: 1200 # 20 minute time steps.
+  min_time_step: 100
   end_time: 86400 # 1 day of simulation
   run_parallel: false
 heat_transfer:

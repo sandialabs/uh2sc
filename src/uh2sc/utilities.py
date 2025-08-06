@@ -23,8 +23,8 @@ from uh2sc.errors import (FluidStrBracketError,
                           FluidMixturePresTempNotValid)
 from uh2sc.constants import Constants
 from uh2sc.thermodynamics import (solubility_of_nacl_in_h2o,
-                                  brine_saturated_pressure,
                                   density_of_brine_water)
+from uh2sc.fluid import FluidWithFitOption
 
 const = Constants()
 
@@ -250,7 +250,7 @@ def verify_mixture_bips(fluid):
     return one_bip_present, bip_status
 
 
-def process_CP_gas_string(matstr):
+def process_CP_gas_string(matstr,backend,model):
     """
     Detects if a multi component fluid is specified using & for separation of components
 
@@ -262,6 +262,7 @@ def process_CP_gas_string(matstr):
     """
 
     _is_valid_matstr(matstr)
+    
 
     if "&" in matstr:
         comp_frac_pair = [str.replace("["," ").replace("]","").split(" ") for str in  matstr.split("&")]
@@ -279,7 +280,7 @@ def process_CP_gas_string(matstr):
         massfracs = [1.0]
         compSRK = matstr
 
-    fluid = CP.AbstractState("HEOS",comp)
+    fluid = CP.AbstractState(backend,comp)
     fluid.set_mass_fractions(massfracs)
 
     # make sure that the fluid setup is covered by CoolProps!
@@ -289,6 +290,10 @@ def process_CP_gas_string(matstr):
         raise FluidDoesNotExistInCoolProp(f"The proposed mixture of fluids {comp} does not "
         +"have Binary Interaction Parameters (BIPs) in CoolProps UH2SC"
         +" cannot simulate this!")
+    if backend != "REFPROP" and "Hydrogen" in fluid.fluid_names() and len(fluid.fluid_names()) > 1:
+        model.logging.warning(f"Backend {backend} is unlikely to accurately"+
+                              " simulate hydrogen mixtures! Please consider"
+                              +" switching to REFPROP backend!")
 
     return comp, massfracs, compSRK, fluid
 

@@ -5,6 +5,11 @@ cavern:
   diameter: 25.69 # meters
   ghe_name: nielson_ghe
   emissivity: 0.99
+  max_operational_pressure_ratio: 1.0
+  min_operational_pressure_ratio: 0.1
+  max_volume_change_per_day: 0.2
+  max_operational_temperature: 360
+  min_operational_temperature: 290
 wells:  # an arbitrary number of wells can be defined that can pull and push different gasses into the well simultaneously
         # each well can have multiple pipes such that a single well can inject and withdraw at the same time.
   cavern_well:
@@ -39,6 +44,7 @@ ghes:
       Qend: 0.0
     number_elements: 50
 initial:  #
+  time_step: 86400
   temperature: 324.41
   pressure: 17249525.004323125 #Pascal
   fluid: "Methane"
@@ -46,7 +52,8 @@ initial:  #
   liquid_height: 1.0 # in meters
   liquid_temperature: 322.5 # ussually 2-4 C cooler than the gas
 calculation:
-  time_step: 86400 # seconds - 1 day time steps
+  max_time_step: 172800 # seconds - 2 day time steps
+  min_time_step: 1200
   end_time: 31104000 #3456000 #
   run_parallel: false
 heat_transfer:

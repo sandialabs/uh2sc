@@ -1,9 +1,92 @@
 from abc import ABC, abstractmethod
+from typing import List
 import numpy as np
 from scipy.sparse import csr_matrix
 import jax
-import jax.numpy as jnp
 from enum import Enum
+
+
+class AbstractThermoState(ABC):
+    """
+    Abstract base class mimicking CoolProp.CP.AbstractState.
+    Defines the thermophysical property interface.
+    """
+
+    @abstractmethod
+    def update(self, input_pair: int, value1: float, value2: float) -> None:
+        """Update the thermodynamic state based on input pair and values."""
+        pass
+
+    @abstractmethod
+    def rhomass(self) -> float:
+        """Return mass density [kg/m³]."""
+        pass
+
+    @abstractmethod
+    def set_mass_fractions(self, fractions: List[float]) -> None:
+        """Set the mass fractions of the fluid components."""
+        pass
+
+    @abstractmethod
+    def get_mass_fractions(self) -> List[float]:
+        """Return the mass fractions of the fluid components."""
+        pass
+
+    @abstractmethod
+    def hmass(self) -> float:
+        """Return specific enthalpy [J/kg]."""
+        pass
+
+    @abstractmethod
+    def compressibility_factor(self) -> float:
+        """Return the compressibility factor Z."""
+        pass
+
+    @abstractmethod
+    def gas_constant(self) -> float:
+        """Return the specific gas constant [J/kg/K]."""
+        pass
+
+    @abstractmethod
+    def molar_mass(self) -> float:
+        """Return the molar mass [kg/mol]."""
+        pass
+
+    @abstractmethod
+    def T(self) -> float:
+        """Return the temperature [K]."""
+        pass
+
+    @abstractmethod
+    def p(self) -> float:
+        """Return the pressure [Pa]."""
+        pass
+
+    @abstractmethod
+    def conductivity(self) -> float:
+        """Return thermal conductivity [W/m/K]."""
+        pass
+
+    @abstractmethod
+    def viscosity(self) -> float:
+        """Return dynamic viscosity [Pa·s]."""
+        pass
+
+    @abstractmethod
+    def cpmass(self) -> float:
+        """Return specific heat capacity at constant pressure [J/kg/K]."""
+        pass
+
+    @abstractmethod
+    def isobaric_expansion_coefficient(self) -> float:
+        """Return the isobaric expansion coefficient [1/K]."""
+        pass
+
+    @abstractmethod
+    def fluid_names(self) -> List[str]:
+        """Return the list of fluid component names."""
+        pass
+
 
 class ComponentTypes(Enum):
     MODEL = 1
