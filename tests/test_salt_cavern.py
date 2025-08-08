@@ -22,23 +22,24 @@ from uh2sc.utilities import evaporation_energy
 
 
 def initialize_model(mixture=False):
-    
     if mixture:
         fluid_str = "Ethane[0.5]&Methane[0.5]"
         end_time = 10000
         mdot=[1,1]
     else:
         fluid_str = "H2"
-        end_time = 1e6
+        end_time = 500000
         mdot=[-1,-1]
-        
     
     inp = {"cavern":{"depth":1000.0,
                      "overburden_pressure":19829198.656747766,
                      "height":304.8,
                      "diameter":25.76033180350307,
                      "emissivity":0.99,
-                     "ghe_name":ADJ_COMP_TESTING_NAME},
+                     "ghe_name":ADJ_COMP_TESTING_NAME,
+                     "max_operational_pressure_ratio":1.0,
+                     "min_operational_pressure_ratio":0.0,
+                     "min_operational_temperature":290},
            "initial":{"time_step":3000.0,
                       "temperature":326.5,
                       "pressure":9000000.0,
@@ -56,6 +57,16 @@ def initialize_model(mixture=False):
            "wells":{},
            "ghes":{}}
     
+    if mixture:
+        pass
+    else:
+        inp["calculation"]["max_time_step"] = 86400
+        
+    
+
+    
+    
+    
     model = Model(inp,
                   single_component_test=True,
                   mdot=mdot,
@@ -63,8 +74,7 @@ def initialize_model(mixture=False):
                   type="CAVERN",
                   r_out=inp['cavern']['diameter']*1.0,
                   salt_therm_cond=5.190311418685122,
-                  farfield_temp=326.5,
-                  solver_options={"TOL":1.0e-2})
+                  farfield_temp=326.5)
     return model
 
 class TestSaltCavern(unittest.TestCase):
@@ -169,19 +179,18 @@ class TestSaltCavern(unittest.TestCase):
             E500000 = P500000 * V0 + umassh2 * mass500000
             
             
-            results = model.components['cavern'].results
+            results = model.dataframe()
+            ind500000 = np.where(np.array(results["Time (s)"]) >= 500000)[0][0]
             
-            ind500000 = np.where(np.array(results["Time (sec)"]) > 500000)[0][0]
-            
-            Tcomp0 = results['Cavern temperature (K)'][0]
-            Ecomp0 = results['Cavern energy (J)'][0]
-            Mcomp0 = results['Mass in cavern (kg)'][0]        
+            Tcomp0 = results['Cavern gas temperature (K)'].iloc[0]
+            Ecomp0 = results['Energy of cavern (J)'].iloc[0]
+            Mcomp0 = results['Cavern H2 mass (kg)'].iloc[0]        
             
             
-            Tcomp5e5 = results['Cavern temperature (K)'][ind500000]
-            Ecomp5e5 = results['Cavern energy (J)'][ind500000]
-            Mcomp5e5 = results['Mass in cavern (kg)'][ind500000]
-            Pcomp5e5 = results['Cavern pressure (Pa)'][ind500000]
+            Tcomp5e5 = results['Cavern gas temperature (K)'].iloc[ind500000]
+            Ecomp5e5 = results['Energy of cavern (J)'].iloc[ind500000]
+            Mcomp5e5 = results['Cavern H2 mass (kg)'].iloc[ind500000]
+            Pcomp5e5 = results['Cavern average gas pressure excluding water vapor (Pa)'].iloc[ind500000]
             
             
             max_percent_error = 18
@@ -201,15 +210,16 @@ class TestSaltCavern(unittest.TestCase):
             
             model.run()
             
-            results = model.components['cavern'].results
-            mass = results['Mass in cavern (kg)']
-            temperature = results['Cavern temperature (K)'][-1]
-            energy = results['Cavern energy (J)'][-1].sum()
-            pressure = results['Cavern pressure (Pa)'][-1]
-            
-            m_final = 6938505.275294549
-            # hydrogen mass has been added
-            self.assertTrue(mass[-1][0] > m_final - 1 and mass[-1][0] < m_final + 1)
+            results = model.dataframe()
+            mass_0 = np.array([results['Cavern Ethane mass (kg)'].iloc[0],results['Cavern Methane mass (kg)'].iloc[0]])
+            mass_final = np.array([results['Cavern Ethane mass (kg)'].iloc[-1],results['Cavern Methane mass (kg)'].iloc[-1]])
+            temperature = results['Cavern gas temperature (K)'].iloc[-1]
+            energy = results['Energy of cavern (J)'].iloc[-1].sum()
+            pressure = results['Cavern average gas pressure excluding water vapor (Pa)'].iloc[-1]
+
+            # mass balance check.
+            del_mass = mass_final.sum() - mass_0.sum()
+            self.assertTrue(del_mass > 9999 and del_mass < 10001)
             
             # pressure has increased 
             p_final = 9070819.20655669

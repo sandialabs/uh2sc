@@ -53,7 +53,9 @@ calculation:
   max_time_step: 1200 # 20 minute time steps.
   min_time_step: 100
   end_time: 86400 # 1 day of simulation
-  run_parallel: false
+  run_parallel: true
+  cool_prop_backend: "HEOS"
+  machine_learning_acceptable_percent_error: 0.1
 heat_transfer:
   h_inner: 30.0 # can enter a constant value if needed.
   h_cavern_brine: 0.1 # no heat interaction with the brine (very little)

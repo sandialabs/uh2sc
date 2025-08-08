@@ -17,12 +17,17 @@ class TestMain(unittest.TestCase):
     def tearDownClass(cls):
         pass
 
-    @unittest.skip("The Vertical Pipe Class is under construction and the current"
-        +" step is to add relative_roughness to the data input schema for wells.")
+    #@unittest.skip("The Vertical Pipe Class is under construction and the current"
+    #    +" step is to add relative_roughness to the data input schema for wells.")
     def test_main(self):
         if self.run_all:
+            rundir= os.path.join(os.path.dirname(__file__),"test_data")
             main(os.path.join(os.path.dirname(__file__),"test_data",
-                 "salt_cavern_mdot_only_test.yml"))
+                 "nieland_verification_h2_SHORT.yml"),
+                 output_file=os.path.join(rundir,"test_delete_me.csv"),
+                 pickle_result=True,
+                 graph_results=True,
+                 log_file=os.path.join(rundir,"main_test_delete_me_log.log"))
 
 
 

@@ -6,7 +6,7 @@ cavern:
   ghe_name: nieland_ghe
   emissivity: 0.99
   max_operational_pressure_ratio: 1.0
-  min_operational_pressure_ratio: 0.1
+  min_operational_pressure_ratio: 0.05
   max_volume_change_per_day: 0.2
   max_operational_temperature: 360
   min_operational_temperature: 290
@@ -38,16 +38,16 @@ ghes:
     heat_capacity: 837.2 #J/kg/K salt heat capacity
     thermal_conductivity: 5.190311418685122 # W/m/K see https://doi.org/10.1016/j.renene.2021.11.080
                                             #for examples this is for 100 C
-    modeled_radial_thickness: 100.0 # hollow cylinder thickness of salt that is modeled
+    modeled_radial_thickness: 50.0 # hollow cylinder thickness of salt that is modeled
     initial_conditions:
       Q0: 0.0
       Qend: 0.0
-    number_elements: 50
+    number_elements: 100
 initial:  #
-  temperature: 326.3
+  temperature: 320.0
   pressure: 17023743.5813687 #Pascal
   fluid: "H2"
-  start_date: "2023-01-01" # Must be in iso format "YYYY-MM-DD"
+  start_date: "2009-01-01" # Must be in iso format "YYYY-MM-DD"
   liquid_height: 1.0 # in meters
   liquid_temperature: 322.5 # ussually 2-4 C cooler than the gas
   time_step: 86400 # 1 day
@@ -55,7 +55,8 @@ calculation:
   max_time_step: 172800 # seconds - 2 day time steps
   min_time_step: 1200
   end_time: 31104000 #3456000 #
-  run_parallel: false
+  run_parallel: true
+  solution_tolerance: 0.00001
 heat_transfer:
   h_inner: "calc" # can enter a constant value if needed.
   h_cavern_brine: 100 # eventually a model is needed for this

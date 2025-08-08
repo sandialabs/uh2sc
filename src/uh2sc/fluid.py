@@ -26,12 +26,40 @@ class FluidWithFitOption(AbstractThermoState):
     IMPORTANT: This class has been separated from AbstractState so that
     everything can be fed into "evaluate_residuals" as picklable. It can 
     then be instantiated each time using "set_state" and then end with "del_state"
-    so that evaluate_jacobian can be run in parallel!
+    so that evaluate_jacobian can be run in parallel! You can use the .is_active 
+    attribute to find out if the fluid has a current AbstractState object 
     
     """
 
     def __init__(self, fluid_tup: tuple , fluid_fit: Optional[object] = None, 
                  logger:logging.Logger = None, acceptable_error:float=0.1, PT=None):
+        """
+        Inputs
+        ======
+        
+        fluid_tup: 3 or 4-tuple : [0] = string: backend model
+                                  [1] = string: CoolPropFluids (components separated by '&')
+                                  [2] = list[float]: mass fractions of each component
+                                  [3] = list[float]: pressure (Pa), temperature (K)
+                                  
+        fluid_fit: UNDER DEVELOPMENT MUST BE NONE FOR NOW
+                  Plans: This will be a ML model that has the exact same 
+                  interfaces as AbstractThermoState and can be used in place 
+                  of CoolProp's fluid properties. You can use the test_ml
+                  to see how accurate the ML model is before and after 
+                  solution so that error can be bounded and the model can
+                  decide whether using machine learning was worth it. If not,
+                  then the CoolProp (slower model) can be used instead.
+                  
+        logger: Allows messages to be logged in a logging file
+        
+        acceptable_error: float : threshold at which machine learning output
+                 is rejected (%)
+
+        """
+        if not isinstance(fluid_tup, tuple):
+            raise TypeError("The fluid_tup input must be a tuple!")
+        
         self.state = None
         self.backend = fluid_tup[0]
         self._fluid_tup = fluid_tup
@@ -51,15 +79,21 @@ class FluidWithFitOption(AbstractThermoState):
     def set_state(self,abstract_state,PT=None):
         self.state = abstract_state(self._fluid_tup[0],self._fluid_tup[1])
         self.state.set_mass_fractions(self._fluid_tup[2])
+        # assure gas state is specified explicitly before trying to update
+        self.state.specify_phase(CP.iphase_gas)
         if PT is not None:
             self.state.update(CP.PT_INPUTS,PT[0],PT[1])
         elif self._PT is not None:
             self.state.update(CP.PT_INPUTS,self._PT[0],self._PT[1])
+        self.is_active = True
+
+        
         
     def del_state(self):
         self._fluid_tup = (self.backend,"&".join(self.fluid_names()),
                            self.get_mass_fractions(),[self.p(),self.T()])
         self.state = None
+        self.is_active = False
         
 
     def _call(self, method_name: str, test_ml: bool = False, *args, **kwargs):

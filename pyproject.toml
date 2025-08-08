@@ -38,7 +38,9 @@ test = [
   "py-pde"
 ]
 docs = [
-  "sphinx"
+  "sphinx",
+  "furo",
+  "sphinx-autodoc-typehints
 ]
 
 [project.scripts]

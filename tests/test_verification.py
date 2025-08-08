@@ -174,11 +174,13 @@ class Constants:
     second_in_day = 24*3600
     days_per_year = 360  # per nieland
 
-def run_gas_type(gas_type, subd, run_verification, nieland_obj, con):
+def run_gas_type(gas_type, subd, run_verification, nieland_obj, con, run_outer_parallel):
+    
+    
     if run_verification:
         days_per_cycle_list = subd["days_per_cycle"]
     else:
-        days_per_cycle_list = [subd["days_per_cycle"][0]]
+        days_per_cycle_list = [subd["days_per_cycle"][2]]
 
     for days_per_cycle in days_per_cycle_list:
         # Prep inputs
@@ -188,8 +190,10 @@ def run_gas_type(gas_type, subd, run_verification, nieland_obj, con):
         with open(inp_path, 'r', encoding='utf-8') as infile:
             inp = yaml.load(infile, Loader=yaml.FullLoader)
 
-        # establish simulation time parameters
-        end_time = (1/3) * con.seconds_per_hour * con.hours_per_day * days_per_cycle
+        # Assure you don't commence inner and outer run_parallel or you will get weird NoneType AttributeErrors
+        # that are caused by AbstractState not staying initialized under a double loop joblib parallelization!
+        if run_outer_parallel:
+            inp["calculation"]["run_parallel"] = False
 
         # read verification dataset from nieland
         filename = subd['file'][days_per_cycle]
@@ -202,16 +206,12 @@ def run_gas_type(gas_type, subd, run_verification, nieland_obj, con):
         # create model object
         model = Model(inp)
 
-        if run_verification:
-            model.components['cavern'].troubleshooting = True
 
         """
         RUN
         """
         model.run(log_file=f"nielson_verification_{gas_type}_{days_per_cycle}.log")
 
-        sc = model.components["cavern"]
-        v_df = create_df_from_sim_output(con.nonleapyear, sc.results)
         v_df = model.dataframe()
 
         
@@ -241,7 +241,7 @@ def run_gas_type(gas_type, subd, run_verification, nieland_obj, con):
         min_error = np.min(error_extremes)
         mean_error = np.abs(uerror.mean())
         
-        model.write_results(filename[:-3]+"_results.csv")
+        model.write_results(filename[:-4]+"_results.csv")
 
         if run_verification:
             
@@ -366,10 +366,11 @@ class TestSaltCavernVerification(unittest.TestCase):
 
         # one parameter that moves this to a long run -time 
         # verification case with plots.
-        cls.run_verification = False
+        cls.run_verification = True
         
+        # running parallel keeps from calculating the Jacobian 
         # only run parallel if run_verification=True
-        cls.run_parallel = cls.run_verification
+        cls.run_parallel = True #cls.run_verification
         
         cls.filedir = os.path.dirname(__file__)
         
@@ -406,18 +407,20 @@ class TestSaltCavernVerification(unittest.TestCase):
     
             if not self.run_verification:
                 # reduce to a single gas.
-                study_input = {"H2": study_input.pop("H2")}
+                study_input = {"Methane": study_input.pop("Methane")}
     
             if self.run_parallel:
                 print("Launching parallel jobs!")
+                
                 Parallel(n_jobs=-1)(delayed(run_gas_type)(gas_type, 
                                                           subd, 
                                                           self.run_verification, 
                                                           self.nieland_obj, 
-                                                          con) for gas_type, subd in study_input.items())
+                                                          con,
+                                                          self.run_parallel) for gas_type, subd in study_input.items())
             else:
                 for gas_type, subd in study_input.items():
-                    run_gas_type(gas_type, subd, self.run_verification, self.nieland_obj, con)
+                    run_gas_type(gas_type, subd, self.run_verification, self.nieland_obj, con,self.run_parallel)
         else:
             logging.warning("Skipping test_nieland_verification because self.run_all=False!")
                 
@@ -472,9 +475,13 @@ class TestSaltCavernVerification(unittest.TestCase):
             # this should prove that conservation of mass is working.
             upper_limit_flow = 0.1620941707317945
             
+            inp['cavern']['max_volume_change_per_day'] = 2.0
+            # you go three times as much in the positive so that you reach the goal 
+            # of reaching upper_limit_flow at time =0 this gives us the desired step 
+            # affects on 
             inp['wells']['cavern_well']['valves']['inflow_mdot']['mdot'] = (
                 [-upper_limit_flow * 0.95,
-                 upper_limit_flow * 0.95])
+                 3* upper_limit_flow * 0.95])
             inp['initial']['pressure'] = 5e6
             
             model = Model(inp)
@@ -483,8 +490,17 @@ class TestSaltCavernVerification(unittest.TestCase):
 
             mass_ethane0 = 34678.648 #kg
             mass_methane0 = 312107.834 #kg
-            mass_change_in_one_half_day = 3326.172383 * 2 #kg
-            # only ehtane is coming in
+            mass_change_in_one_half_day = 0.15398946219520476 * 43200
+            # only ehtane is coming 
+            
+            # neglecting water vapor.
+            mass_ethane1 = 0.1 * mass_change_in_one_half_day - mass_ethane0
+            mass_ethane2 = mass_ethane1 - 0.15398946219520476 * 43200
+            
+            mass_methane1 = 0.9 * mass_change_in_one_half_day - mass_methane0
+            mass_methane2 = mass_methane1
+            
+            
             
             mass_ethane1 = mass_ethane0 + mass_change_in_one_half_day
             
@@ -498,12 +514,18 @@ class TestSaltCavernVerification(unittest.TestCase):
             mass_methane2 = mass_methane0 - mass_change_in_one_half_day * new_mass_fraction_methane
             mass_ethane2 = mass_ethane1 - mass_change_in_one_half_day * new_mass_fraction_ethane
             
-            self.assertTrue(np.abs(mass_ethane2 - 
-                                   model.components['cavern']._m_cavern[0]) 
-                                   < 200)
-            self.assertTrue(np.abs(mass_methane2 - 
-                                   model.components['cavern']._m_cavern[1]) 
-                                   < 200)
+            df = model.dataframe()
+            
+            m_ethane = df['Cavern Ethane mass (kg)']
+            m_methane = df['Cavern Methane mass (kg)']
+            
+            self.assertTrue(np.abs((mass_ethane2 - 
+                                   m_ethane.iloc[-1]) 
+                                   < 200))
+            self.assertTrue(np.abs((mass_methane2 - 
+                                   m_methane.iloc[-1]) 
+                                   < 200))
+            return
             
         
         logging.warning("Skipping test_gas_mixture_mass_balance because self.run_all=False!")
@@ -523,7 +545,7 @@ class TestSaltCavernVerification(unittest.TestCase):
                    inp = yaml.load(infile, Loader=yaml.FullLoader)
                    
                 inp["calculation"]["end_time"] = 20000
-                inp["calculation"]["time_step"] = 1200
+                inp["initial"]["time_step"] = 1200
                 model = Model(inp)
             else:
                 model = Model(infile)
@@ -533,7 +555,7 @@ class TestSaltCavernVerification(unittest.TestCase):
             
             model.run()
             
-            df = model.dataframe
+            df = model.dataframe()
             
             val_data_fnames = {"Pressure Data":"2022_Han_PressureData.csv",
                                "Model Pressure":"2022-HANEtal_Model_pressure.csv",
@@ -589,7 +611,7 @@ class TestSaltCavernVerification(unittest.TestCase):
             
             
             # HERE IS WHERE I LEFT OFF
-            if True: #self.create_plots and self.run_verification:
+            if self.create_plots and self.run_verification:
                 fig,axl = plt.subplots(3,1,figsize=(10,20))
                 
                 plot_three_dataframes(

@@ -22,6 +22,11 @@ calculation:
     run_parallel:
       type: boolean
       required: false
+    num_processors:
+      type: integer
+      required: false
+      min: -1
+      max: 100000000
     solution_tolerance:
       max: 0.001
       min: 0.0000000000001
@@ -81,7 +86,7 @@ cavern:
       type: number
     min_operational_pressure_ratio:
       max: 1.0
-      min: 0.1
+      min: 0.0
       required: false
       type: number
     max_volume_change_per_day:
@@ -154,9 +159,11 @@ initial:
   type: dict
 wells:
   allow_unknown: true
+  check_with: assure_only_one_well_for_now
   required: true
   type: dict
 ghes:
   allow_unknown: true
+  check_with: assure_only_one_ghe_for_now
   required: true
   type: dict

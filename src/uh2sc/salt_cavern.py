@@ -185,9 +185,8 @@ class SaltCavern(AbstractComponent):
         self._height_brine_m1 = self._height_brine
         self._height_total = input_dict["cavern"]["height"]
         self._fluid = model.fluids['cavern']
-        self._fluid.set_state(CP.AbstractState)
-        self._fluid.update(CP.PT_INPUTS, input_dict['initial']['pressure'],
-                                         input_dict['initial']['temperature'])
+        self._fluid.set_state(CP.AbstractState, [input_dict['initial']['pressure'],
+                                         input_dict['initial']['temperature']])
 
         delp_brine = 0.5 * const.g['value'] * (water.rhomass() * self._height_brine  + (self._height_total - self._height_brine) * self._fluid.rhomass())
         water.update(CP.PT_INPUTS,p0 + delp_brine,T0brine)
@@ -255,21 +254,8 @@ class SaltCavern(AbstractComponent):
 
         self._model = model
 
-        self.result_names = {"_t_cavern":"Cavern temperature (K)",
-                         "_t_cavern_wall":"Cavern wall temperature (K)",
-                         "_p_cavern":"Cavern pressure (Pa)",
-                         "_m_cavern":"Mass in cavern (kg)",
-                         "_vol_cavern":"Cavern volume (m3)",
-                         "_t_brine":"Brine temperature (K)",
-                         "_p_brine":"Brine pressure",
-                         "_t_brine_wall":"Brine wall temperature",
-                         "time":"Time (sec)",
-                         "e_brine":"Brine energy (J)",
-                         "e_cavern":"Cavern energy (J)"}
         self._residual_iter = 0
-        self.results = {}
-        for attr, name in self.result_names.items():
-            self.results[name] = []
+
             
         self._fluid.del_state()
 
@@ -362,6 +348,7 @@ class SaltCavern(AbstractComponent):
         # update composition of the current and previous time step fluids.
         fluid = self._fluid
         fluid.set_state(CP.AbstractState,[self._p_cavern,t_cavern])
+        
         fluid_m1 = self._fluid_m1
         fluid_m1.set_state(CP.AbstractState,[self._p_cavern_m1, self._t_cavern_m1])
         
@@ -460,8 +447,8 @@ class SaltCavern(AbstractComponent):
 
 
         # total energy of cavern and brine
-        e_cavern_m1 = hmass_cavern_m1 * m_cavern_m1
-        e_cavern = hmass_cavern * m_cavern
+        e_cavern_m1 = hmass_cavern_m1 * m_cavern_m1.sum()
+        e_cavern = hmass_cavern * m_cavern.sum()
         e_brine_m1 = hmass_brine_m1 * m_brine_m1
         e_brine = hmass_brine * m_brine
 
@@ -529,15 +516,18 @@ class SaltCavern(AbstractComponent):
             # into results timeseries here!
             # THIS IS A MESS WITH ARRAYS VS FLOATS, Everything needs to
             # be floats
-            return (float(del_vol_brine),
-                    float(mass_vapor),
-                    float(vol_cavern),
+            
+            
+            
+            return (float(self._sum_or_float(del_vol_brine)),
+                    float(self._sum_or_float(mass_vapor)),
+                    float(self._sum_or_float(vol_cavern)),
                     float(volume_liquid_brine),
                     float(p_brine),
                     float(cavern_vapor_mass_flow),
                     float(p_cavern_novapor + p_vapor),
                     float(e_brine),
-                    float(e_cavern[0]),
+                    float(e_cavern),
                     float(p_cavern_novapor))
 
 
@@ -597,11 +587,11 @@ class SaltCavern(AbstractComponent):
 
         residuals[_eqn] = ((dt
                            * (cavern_mass_energy_flow
-                           + q_cavern_wall
+                           + self._sum_or_float(q_cavern_wall)
                            - q_rad
                            - q_cavern_brine
-                           + vt_o_d * drhodt * dPdT))     # expansion term)
-                           + e_vapor_cavern
+                           + self._sum_or_float(vt_o_d * drhodt * dPdT)))     # expansion term)
+                           + self._sum_or_float(e_vapor_cavern)
                            - (e_cavern.sum()
                            - e_cavern_m1.sum()))
         if self._use_relative_convergence:
@@ -631,7 +621,11 @@ class SaltCavern(AbstractComponent):
 
         ### ----- Brine Mass ---- ####
 
-        residuals[_eqn] = -m_brine + m_brine_m1 - mass_change_vapor + cavern_vapor_mass_flow * dt
+        residuals[_eqn] = (-m_brine 
+                           + m_brine_m1 
+                           - self._sum_or_float(mass_change_vapor) 
+                           + cavern_vapor_mass_flow * dt)
+        
         if self._use_relative_convergence:
             residuals[_eqn] = (
                 residuals[_eqn] 
@@ -647,7 +641,7 @@ class SaltCavern(AbstractComponent):
 
         if np.isnan(residuals).sum() > 0.0:
             ind_nan = np.where(np.isnan(residuals) == True)[0]
-            raise ValueError(f"The following salt cavern equations produced NaN! {ind_nan}")
+            raise ValueError(f"The following salt cavern equation number (starting from 0) produced NaN! {ind_nan}")
             
         # deinitialize states.
         fluid.del_state()
@@ -748,7 +742,7 @@ class SaltCavern(AbstractComponent):
     @property
     def previous_adjacent_components(self):
         """
-        Interface variable indices for the previous component
+        Interface variable indices for the previous component (wells in this case)
         """
         prev_comp = {}
         for wname, well in self._prev_components:
@@ -955,7 +949,6 @@ class SaltCavern(AbstractComponent):
         # TODO, you are just using water, you need it to be brine! maybe you should
         # write a class that inherits from the CoolProp Abstract state but incorporates
         # the brine properties when needed.
-        #breakpoint()
         ht_coef_brine_wall = self._wall_ht_coef(height_brine,water,t_brine,t_cavern_wall,self._p_brine)
 
         # same as above
@@ -1024,6 +1017,24 @@ class SaltCavern(AbstractComponent):
 
     def _mass_flux_and_mass_energy_flux(self,fluid,hmass,p_cavern,t_cavern,rho_vapor,rho_cavern,h_vapor):
         # rho_cavern includes rho_vapor
+        """
+        inputs:
+            
+            fluid : is the cavern gas fluid
+            
+            hmass : is the cavern enthalpy
+            
+            p_cavern : cavern pressure
+            
+            t_cavern : cavern temperature
+            
+            rho_vapor : density of non-interacting water vapor (i.e., saturated vapor state)
+            
+            rho_cavern : density of the gas in the cavern
+            
+            h_vapor : energy content of the water vapor.
+        
+        """
 
         gas_mass_fraction = rho_cavern/(rho_cavern + rho_vapor)
         water_vapor_mass_fraction = rho_vapor / (rho_cavern + rho_vapor)
@@ -1037,9 +1048,21 @@ class SaltCavern(AbstractComponent):
                          t_cavern)
 
             if len( fluid.fluid_names()) > 1:
+                
+                # WHEN MULTIPLE WELLS ARE CREATED YOU HAVE TO UPDATE THIS
+                # HERE IS THE MARKER "MULTI_WELL_CHANGE_NEEDED"
+                num_well = 0
+                for fluid_name, wfluid in self._model.fluids.items():
+                    if fluid_name != "cavern":
+                        # only other fluid is the well fluid
+                        rfluid = wfluid
+                        num_well += 1
+                if num_well > 1:
+                    raise NotImplemented("The input must have two wells in it."
+                                         +" The UH2SC code is not yet set up "+
+                                         "to handle this")
 
-                rfluid = self._model.fluids['cavern_well']
-
+                rfluid.set_state(CP.AbstractState,[p_cavern,t_cavern])
                 rhmass = rfluid.hmass()
             else:
                 rfluid = fluid
@@ -1058,6 +1081,9 @@ class SaltCavern(AbstractComponent):
             else:
                 cavern_mass_energy_flow = rhmass * v_mdot
                 cavern_vapor_energy_flow = 0.0
+                
+            if rfluid != fluid:
+                rfluid.del_state()
 
         else:
             cavern_gas_mass_flow = np.zeros(self._number_fluids)
@@ -1074,19 +1100,22 @@ class SaltCavern(AbstractComponent):
                         cavern_gas_mass_flow += v_mdot
                         cavern_vapor_mass_flow = 0.0
                     else:
-                        cavern_gas_mass_flow += v_mdot * gas_mass_fraction
-                        cavern_vapor_mass_flow += v_mdot.sum() * water_vapor_mass_fraction
+                        v_mdot_out = v_mdot.sum() * np.array(fluid.get_mass_fractions())
+                        # but water vapor is going to go out too!
+                        cavern_gas_mass_flow += v_mdot_out * gas_mass_fraction
+                        cavern_vapor_mass_flow += v_mdot_out.sum() * water_vapor_mass_fraction
 
                     wfluid.update(CP.PT_INPUTS,
                                  self._wells_pres[wname][vname],
                                  self._wells_temp[wname][vname])
 
+
                     if v_mdot.sum() > 0.0:
                         cavern_mass_energy_flow += v_mdot.sum() * wfluid.hmass()
                         cavern_vapor_energy_flow += 0.0   #TODO - allow water vapor below saturation pressure to be present.
                     else:
-                        cavern_mass_energy_flow += v_mdot.sum() * gas_mass_fraction * hmass
-                        cavern_vapor_energy_flow += v_mdot.sum() * water_vapor_mass_fraction * h_vapor
+                        cavern_mass_energy_flow += v_mdot_out.sum() * gas_mass_fraction * hmass
+                        cavern_vapor_energy_flow += v_mdot_out.sum() * water_vapor_mass_fraction * h_vapor
                         
                     wfluid.del_state()
 
@@ -1106,3 +1135,9 @@ class SaltCavern(AbstractComponent):
                              +"meant for test mode!")
 
         return q_axi_cavern
+    
+    def _sum_or_float(self,val):
+        if isinstance(val,np.ndarray):
+            return val.sum()
+        else:
+            return val

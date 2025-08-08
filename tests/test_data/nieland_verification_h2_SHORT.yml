@@ -3,7 +3,7 @@ cavern:
   overburden_pressure: 19829198.656747766 # Pascal:  Approximately 1000 m deep overburden pressure
   height: 304.8 # meters
   diameter: 25.69 # meters
-  ghe_name: nielson_ghe
+  ghe_name: nieland_ghe
   emissivity: 0.99
   max_operational_pressure_ratio: 1.0
   min_operational_pressure_ratio: 0.05
@@ -23,18 +23,18 @@ wells:  # an arbitrary number of wells can be defined that can pull and push dif
     valves: # must have same number of valves as pipe_lengths (every pipe ends in a valve)
       inflow_mdot:
         type: "mdot"
-        time: [0, 2592000, 2592000.01, 7776000, 7776000.01, 10368000, 10368000.01, 15552000, 15552000.01, 18144000, 18144000.01, 23328000, 23328000.01, 25920000, 25920000.01, 31104000]
-        mdot: [-4.279179200656217, -4.279179200656217, 2.1395896003281085, 2.1395896003281085, -4.279179200656217, -4.279179200656217, 2.1395896003281085, 2.1395896003281085, -4.279179200656217, -4.279179200656217, 2.1395896003281085, 2.1395896003281085, -4.279179200656217, -4.279179200656217, 2.1395896003281085, 2.1395896003281085]
+        time: [0, 103680, 103680.01, 311040]
+        mdot: [-0.1189370698725589, -0.1189370698725589, 0.05946853493627945, 0.05946853493627945]
         reservoir:
           pressure: 20000000.0
           temperature: 310.93
-          fluid: 'Methane' # Though you can make any mixture of gasses here, read CoolProp's documentation. You can get completely unrealistic results with untested arbitrary mixtures of fluid!!!
+          fluid: 'H2' # Though you can make any mixture of gasses here, read CoolProp's documentation. You can get completely unrealistic results with untested arbitrary mixtures of fluid!!!
                       # http://www.coolprop.org/fluid_properties/Mixtures.html#binary-pairs WARNING IN CoolProp:
 ghes:
-  nielson_ghe:
+  nieland_ghe:
     distance_to_farfield_temp: 600.0 # meters - calibration term
     density: 2162.4925554846 # kg/m3 salt density
-    farfield_temperature: 317.5944444444444 # Kelvin
+    farfield_temperature: 315.5944444444444 # Kelvin
     heat_capacity: 837.2 #J/kg/K salt heat capacity
     thermal_conductivity: 5.190311418685122 # W/m/K see https://doi.org/10.1016/j.renene.2021.11.080
                                             #for examples this is for 100 C
@@ -44,17 +44,17 @@ ghes:
       Qend: 0.0
     number_elements: 100
 initial:  #
-  time_step: 86400
-  temperature: 324.41
-  pressure: 17249525.004323125 #Pascal
-  fluid: "Methane"
+  temperature: 319.0
+  pressure: 17023743.5813687 #Pascal
+  fluid: "H2"
   start_date: "2009-01-01" # Must be in iso format "YYYY-MM-DD"
   liquid_height: 1.0 # in meters
-  liquid_temperature: 322.5 # ussually 2-4 C cooler than the gas
+  liquid_temperature: 317.5 # ussually 2-4 C cooler than the gas
+  time_step: 86400
 calculation:
-  max_time_step: 172800 # seconds - 2 day time steps
+  max_time_step: 172800 # seconds - 2 days time steps
   min_time_step: 1200
-  end_time: 31104000 #3456000 #
+  end_time: 311040 #3456000 #
   run_parallel: true
   solution_tolerance: 0.00001
 heat_transfer:

@@ -50,7 +50,7 @@ calculation:
   max_time_step: 43200
   min_time_step: 1200
   end_time: 86400 # ends after one day
-  run_parallel: false
+  run_parallel: true
 heat_transfer:
   h_inner: "calc" # can enter a constant value if needed.
   h_cavern_brine: 100 # eventually a model is needed for this

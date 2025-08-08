@@ -19,7 +19,7 @@ class TestModel(unittest.TestCase):
     def setUpClass(cls):
         cls.filedir = os.path.dirname(__file__)
         inp_path = os.path.join(cls.filedir,"test_data",
-                                "nielson_verification_h2_12_cycles.yml")
+                                "nieland_verification_h2_12_cycles.yml")
         # load constants for the Nieland paper.
         with open(inp_path, 'r', encoding='utf-8') as infile:
             cls.inp = yaml.load(infile, Loader=yaml.FullLoader)
@@ -35,18 +35,19 @@ class TestModel(unittest.TestCase):
         # short and sweet.
         self.inp['calculation']['end_time'] = 2 * 24 * 3600
         
-        self.inp["initial"]["pressure"] = 20511902.93775
+        self.inp["initial"]["pressure"] = 19511902.93775
         self.inp["initial"]["fluid"] = "H2"
         self.inp['initial']['temperature'] = 326.5
+        self.inp['cavern']['max_operational_pressure_ratio'] = 1.0
         
-        model = Model(self.inp,solver_options={"TOL": 1.0e-2})
+        model = Model(self.inp)
         
         model.run()
         
         solution = model.solutions
         
-        print(model.xg_description[0:6])
-        print(solution[172800.0][0:6])
+        #print(model.xg_description[0:6])
+        #print(solution[172800.0][0:6])
         
         model.write_results()
         

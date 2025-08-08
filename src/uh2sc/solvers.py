@@ -279,7 +279,6 @@ class NewtonSolver(object):
                 r = r_
                 r_norm = new_norm
             else:
-                #breakpoint()
                 r = model.evaluate_residuals()
                 r_norm = np.max(abs(r))
 

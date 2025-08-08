@@ -7,7 +7,6 @@ Created on Wed Jan 17 15:05:14 2024
 
 import os
 from warnings import warn
-import re
 
 import numpy as np
 from scipy.optimize import fsolve, root_scalar
@@ -18,7 +17,6 @@ from CoolProp import CoolProp as CP
 from uh2sc.errors import (FluidStrBracketError,
                           FluidStrNumberError,
                           FluidStrNumbersDoNotAddToOneError,
-                          FluidMixtureDoesNotExistInCoolProp,
                           FluidMixtureStateInfeasibleInCoolProp,
                           FluidMixturePresTempNotValid,
                           FluidDoesNotExistInCoolProp,
@@ -27,6 +25,7 @@ from uh2sc.constants import Constants
 from uh2sc.thermodynamics import (solubility_of_nacl_in_h2o,
                                   density_of_brine_water)
 from uh2sc.fluid import FluidWithFitOption
+import logging
 
 const = Constants()
 
@@ -45,14 +44,14 @@ def _update_fluid(fluid_tup,pres,temp):
             raise FluidMixtureStateInfeasibleInCoolProp("The fluid mixture"
             +f" {fluid.fluid_names()} is infeasible at mass "
             +f"fractions equal to {fluid.get_mass_fractions()}' please adjust"
-            +f" your mass fractions to ratios that work!. The mixture model"
+            +" your mass fractions to ratios that work!. The mixture model"
             +" became unstable:") from exc
         elif "p is not a valid number" in str(exc):
             raise FluidMixturePresTempNotValid("The fluid mixture"
             +f" {fluid.fluid_names()} temperature {temp} and pressure {pres} "
             +"are not valid inputs at mass for mass"
             +f"fractions equal to {fluid.get_mass_fractions()}' please adjust"
-            +f" your mass fractions to ratios that work!. The mixture model"
+            +" your mass fractions to ratios that work!. The mixture model"
             +" listed pressure as an invalid value!\n\n") from exc
 
         else:
@@ -112,7 +111,6 @@ def _is_valid_matstr(matstr):
     """
     _valid = True
     bad_float_exception = None
-    bad_fluid_str = None
     bad_brackets = None
     bad_numbers = None
 
@@ -122,7 +120,7 @@ def _is_valid_matstr(matstr):
 
         bad_fluidstr = None
         try:
-            _fluid = CP.AbstractState("HEOS",fluidstr)
+            CP.AbstractState("HEOS",fluidstr)
         except ValueError as excep:
             valid = False
             bad_fluidstr = excep
@@ -228,7 +226,6 @@ def verify_mixture_bips(fluid_tup):
         num_fluids = len(fluid_names)
 
         if num_fluids < 2:
-            #print("Warning: Mixture has less than two components, no BIPs to check.")
             return True, bip_status
 
         # Iterate through all unique pairs of fluids
@@ -237,26 +234,21 @@ def verify_mixture_bips(fluid_tup):
                 fluid1_name = fluid_names[i]
                 fluid2_name = fluid_names[j]
 
-                got_a_var = False
                 for var in var_to_try:
                     try:
-
                         # Attempt to retrieve the k_ij BIP
                         # {Link: get_binary_interaction_double() https://coolprop.org/fluid_properties/Mixtures.html} requires indices and the parameter name
                         var_value = fluid.get_binary_interaction_double(i, j, var)
                         bip_status[(fluid1_name, fluid2_name, var)] = var_value
 
                         if var_value != 0.0:
-                            #print(f"BIP (k_ij) for {fluid1_name}-{fluid2_name}: {kij_value}")
                             one_bip_present = True
 
-                    except Exception as e:
-
-                        #print(f"Error checking BIP for {fluid1_name}-{fluid2_name}: {e}")
+                    except Exception:
                         bip_status[(fluid1_name, fluid2_name)] = "Error"
 
     except Exception as e:
-        print(f"An error occurred while processing the fluid mixture: {e}")
+        logging.warning(f"An error occurred while processing the fluid mixture: {e}")
         return False, {}
 
     return one_bip_present, bip_status
@@ -426,8 +418,6 @@ def find_all_fluids(model):
 
             if "reservoir" in valve:
 
-                reservoir = valve["reservoir"]
-
                 vfluids = valve["reservoir"]["fluid"]
                 comps, molefracs, compSRK, fluid = process_CP_gas_string(vfluids, backend, model)
                 #Translate to exact CoolProp name for the fluid in the DB
@@ -458,7 +448,6 @@ def find_all_fluids(model):
                                           +"been implemented!")
 
             if "reservoir" in valve:
-                reservoir = valve["reservoir"]
 
                 fluid_str = _construct_ordered_fluid_str(fluid_components,
                                                          fluid_mapping,
@@ -474,16 +463,6 @@ def find_all_fluids(model):
     icomps, imolefracs, icompSRK, ifluid = process_CP_gas_string(
         cavern_fluid_str, backend, model)
     fluids["cavern"] = ifluid
-
-    pres = model.inputs['initial']['pressure']
-    temp = model.inputs['initial']['temperature']
-    # set initial fluid properties
-    # for wname, fluiddict in fluids.items():
-    #     if wname != 'cavern':
-    #         for vname, fluid in fluiddict.items():
-    #             fluid = _update_fluid(fluid,pres,temp)
-
-    #     fluid = _update_fluid(fluids['cavern'],pres,temp)
 
 
     model.fluids = fluids
@@ -507,9 +486,12 @@ def _construct_ordered_fluid_str(fluid_components,fluid_mapping,names=None):
 
         fluid_str = ""
         prestr = ""
-
+        
+        cp_fluid.set_state(CP.AbstractState)
         cp_fluid_names = cp_fluid.fluid_names()
         cp_mass_fracs = cp_fluid.get_mass_fractions()
+        cp_fluid.del_state()
+        
         for pure_fluid in fluid_components:
             if pure_fluid in cp_fluid_names:
                 cp_ind = cp_fluid_names.index(pure_fluid)
@@ -634,6 +616,8 @@ def conservation_of_volume(vol_cavern, volume_total, area, water, t_cavern,
                                                    t_brine)
 
     fluid.update(CP.PT_INPUTS, pressure_gas, t_cavern)
+    if isinstance(pressure_brine, np.ndarray):
+        pressure_brine = pressure_brine[0]
     water.update(CP.PT_INPUTS, pressure_brine, t_brine)
 
     if return_vapor_variables:

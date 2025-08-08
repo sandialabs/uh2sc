@@ -218,10 +218,6 @@ class ImplicitEulerAxisymmetricRadialHeatTransfer(AbstractComponent):
             Q[0] = x[gind[0]]
             Tgvec = x[gind[0]+1:gind[1]]
             Q[-1] = x[gind[1]]
-        
-        # if self._model.time > 100000 and self._iter == 0:
-        #     breakpoint()
-        #     self._iter +=1
 
         # set the interface condition equations
         # or boundary condition equations

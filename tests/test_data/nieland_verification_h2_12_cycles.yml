@@ -6,7 +6,7 @@ cavern:
   ghe_name: nieland_ghe
   emissivity: 0.99
   max_operational_pressure_ratio: 1.0
-  min_operational_pressure_ratio: 0.1
+  min_operational_pressure_ratio: 0.05
   max_volume_change_per_day: 0.2
   max_operational_temperature: 360
   min_operational_temperature: 290
@@ -56,6 +56,7 @@ calculation:
   max_time_step: 172800
   end_time: 31104000 #3456000 #
   run_parallel: true
+  solution_tolerance: 0.00001
 heat_transfer:
   h_inner: "calc" # can enter a constant value if needed.
   h_cavern_brine: 100 # eventually a model is needed for this

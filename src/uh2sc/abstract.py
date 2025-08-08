@@ -3,8 +3,8 @@ from typing import List
 import numpy as np
 from scipy.sparse import csr_matrix
 from joblib import Parallel, delayed
-import jax
 from enum import Enum
+import os
 
 def compute_column(i, x, r, dx_val, residual_func):
     dx = np.zeros_like(x)
@@ -225,6 +225,30 @@ class AbstractComponent(ABC):
 
 
     def evaluate_jacobian(self, x=None, dx_val=1e-5):
+        
+        num_processors = 1
+        if hasattr(self,"inputs"):
+            if "calculation" in self.inputs:
+                if "num_processors" in self.inputs["calculation"]:
+                    num_processors = self.inputs["calculation"]["num_processors"]
+                    cpu_count = os.cpu_count()
+                    if num_processors > cpu_count:
+                        num_processors = cpu_count
+        
+        
+        if self._run_parallel and hasattr(self,"fluids"):
+            # assure there are no active fluids with AbstractState which
+            # are not pickleable! 
+            for fluid_name, fluid in self.fluids.items():
+                if isinstance(fluid,dict):
+                    for fluid_name_2, fluid2 in fluid.items():
+                        if fluid2.is_active:
+                            fluid2.del_state()
+                else:
+                    if fluid.is_active:
+                        fluid.del_state()
+                
+        
         if x is None:
             x = self.get_x()
         n = len(x)
@@ -232,7 +256,7 @@ class AbstractComponent(ABC):
         J = np.zeros((n, n))
     
         if self._run_parallel:
-            results = Parallel(n_jobs=-1)(
+            results = Parallel(n_jobs=num_processors)(
                 delayed(compute_column)(i, x, r, dx_val, self.evaluate_residuals) for i in range(n)
             )
             for i, col in results:

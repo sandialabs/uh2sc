@@ -1,7 +1,6 @@
 
 
 from copy import deepcopy
-from warnings import warn
 import numpy as np
 import logging
 import yaml
@@ -11,10 +10,13 @@ import time
 from matplotlib import pyplot as plt
 import pandas as pd
 
+import pickle
+
 import CoolProp.CoolProp as CP
 
 from uh2sc import validator
-from uh2sc.errors import InputFileError, NewtonSolverError, DeveloperError
+from uh2sc.errors import (InputFileError, NewtonSolverError, DeveloperError,
+                          CavernStateOutOfOperationalBounds)
 from uh2sc.solvers import NewtonSolver
 from uh2sc.abstract import AbstractComponent, ComponentTypes
 from uh2sc.ghe import ImplicitEulerAxisymmetricRadialHeatTransfer
@@ -25,14 +27,46 @@ from uh2sc.utilities import (process_CP_gas_string,
                              brine_average_pressure)
 from uh2sc.salt_cavern import SaltCavern
 from uh2sc.well import Well, VerticalPipe, PipeMaterial
-from uh2sc.constants import Constants
-from uh2sc.thermodynamics import (density_of_brine_water,
-                                  brine_saturated_pressure,
-                                  solubility_of_nacl_in_h2o)
+
+class PickleHelp:
+    @staticmethod
+    def find_unpickleable_attrs(obj, path="Model", visited=None):
+        
+        no_unpickleable_found = True
+        
+        if visited is None:
+            visited = set()
+        if id(obj) in visited:
+            return
+        visited.add(id(obj))
+
+        if isinstance(obj, (str, int, float, bool, type(None))):
+            return  # primitive types are always pickleable
+
+        try:
+            pickle.dumps(obj)
+        except Exception as e:
+            no_unpickleable_found = False
+            print(f"Unpickleable at {path}: {type(obj)} — {e}")
+
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                PickleHelp.find_unpickleable_attrs(k, path=f"{path}[{repr(k)}]", visited=visited)
+                PickleHelp.find_unpickleable_attrs(v, path=f"{path}[{repr(k)}]", visited=visited)
+        elif hasattr(obj, "__dict__"):
+            for attr_name, attr_val in vars(obj).items():
+                PickleHelp.find_unpickleable_attrs(attr_val, path=f"{path}.{attr_name}", visited=visited)
+        elif isinstance(obj, (list, tuple, set)):
+            for i, item in enumerate(obj):
+                PickleHelp.find_unpickleable_attrs(item, path=f"{path}[{i}]", visited=visited)
+        
+        return no_unpickleable_found
 
 
 
 class TimeStepAdvisor:
+    # THIS IS A GOOD IDEA THAT HAS NOT BEEN IMPLEMENTED YET AND NEEDS WORK
+    # AND TESTING.
     
     def __init__(self,end_time,min_time_step,min_data_needed=20):
         self.w_log = None
@@ -108,51 +142,58 @@ class TimeStepAdvisor:
         
         fit_worked = self._fit(step_num)
         if fit_worked:
-            self._predict(default_value)
+            return self._predict(default_value)
         else:
             return default_value
         
 
     def _fit(self,step_num):
         """
+        THIS IS NOT WORKING YET. EVERYTHING IS IN PLACE BUT THE MODEL
+        IS TOO SIMPLE.
+        
         Fit models using simulation data up to `end_time`.
         `data` must be an Nx7 array with columns:
         step_num, sim_time, time_step, num_iter, real_time, converged, input_rate_change
         """
-        data = self.data[0:step_num,:]
-        end_time = self.end_time
+        # I DO NOT HAVE THIS WORKING YET AND DO NOT HAVE TIME 
+        return False
         
-        if data.shape[0] < self._min_data_needed:
-            return False
+        # data = self.data[0:step_num,:]
+        # end_time = self.end_time
+        
+        # if data.shape[0] < self._min_data_needed:
+        #     return False
 
 
-        _, sim_time, time_step, num_iter, real_time, converged, input_rate_change = data.T
-        X = np.column_stack([time_step, input_rate_change, sim_time])
-        y_conv = converged
-        y_time = real_time
-        y_iter = num_iter
+        # _, sim_time, time_step, num_iter, real_time, converged, input_rate_change = data.T
+        # X = np.column_stack([time_step, input_rate_change, sim_time])
+        # y_conv = converged
+        # y_time = real_time
+        # y_iter = num_iter
 
-        # Split 80/20
-        n = len(X)
-        split = int(0.8 * n)
-        X_train = X[:split]
-        y_conv_train = y_conv[:split]
-        y_time_train = y_time[:split]
-        y_iter_train = y_iter[:split]
+        # # Split 80/20
+        # n = len(X)
+        # split = int(0.8 * n)
+        # X_train = X[:split]
+        # y_conv_train = y_conv[:split]
+        # y_time_train = y_time[:split]
+        # y_iter_train = y_iter[:split]
 
-        # Train models
-        self.w_log, self.b_log = self._fit_logistic_regression(X_train, y_conv_train)
-        self.coeffs_time = self._fit_linear_regression(X_train, y_time_train)
-        self.coeffs_iter = self._fit_linear_regression(X_train, y_iter_train)
+        # # Train models
+        # self.w_log, self.b_log = self._fit_logistic_regression(X_train, y_conv_train)
+        # self.coeffs_time = self._fit_linear_regression(X_train, y_time_train)
+        # self.coeffs_iter = self._fit_linear_regression(X_train, y_iter_train)
 
-        # Store normalization stats
-        self.time_mean = y_time_train.mean()
-        self.time_std = y_time_train.std() + 1e-6
-        self.iter_mean = y_iter_train.mean()
-        self.iter_std = y_iter_train.std() + 1e-6
-        self.X_test = X[split:]
+        # # Store normalization stats
+        # self.time_mean = y_time_train.mean()
+        # self.time_std = y_time_train.std() + 1e-6
+        # self.iter_mean = y_iter_train.mean()
+        # self.iter_std = y_iter_train.std() + 1e-6
+        # self.X_test = X[split:]
+        # self.is_trained = True
 
-        return True
+        # return True
 
     def _predict(self, default_value):
         """
@@ -192,7 +233,7 @@ class TimeStepAdvisor:
             return float(np.clip(self.multipliers[best_idx], 0.5, 2.0))
 
         except Exception as e:
-            print(f"[WARN] Prediction failed: {e}")
+            self.logging.warning(f"[WARN] Prediction failed: {e}")
             return default_value
 
 
@@ -231,28 +272,39 @@ class Model(AbstractComponent):
 
         """
         self.is_single_component_test = single_component_test
-        self.logging = logging
+        self.logging = logging.getLogger(__name__)
+        
+        if isinstance(inp,str):
+            self.input_file = inp
+        else:
+            self.input_file = None
+        
         self.inputs = self._read_input(inp)
         
         if not single_component_test:
             # Deal with default values for optional inputs.
-            if "cool_prop_backend" not in inp["calculation"]:
-                inp["calculation"]["cool_prop_backend"] = "HEOS"
+            if "cool_prop_backend" not in self.inputs["calculation"]:
+                self.inputs["calculation"]["cool_prop_backend"] = "HEOS"
                 
-            if "machine_learning_acceptable_percent_error" not in inp["calculation"]:
-                inp["calculation"]["machine_learning_acceptable_percent_error"] = 0.1
+            if "machine_learning_acceptable_percent_error" not in self.inputs["calculation"]:
+                self.inputs["calculation"]["machine_learning_acceptable_percent_error"] = 0.1
                 
-            if "run_parallel" not in inp["calculation"]:
-                inp["calculation"]["run_parallel"] = True
+            if "run_parallel" not in self.inputs["calculation"]:
+                self.inputs["calculation"]["run_parallel"] = False
             
-            if not inp["calculation"]["run_parallel"]:
+            if not self.inputs["calculation"]["run_parallel"]:
                 self.logging.warning("This simulation is running in serial which"
-                    +" is much slower than running in parallel and should be"
-                    +" confined to debugging!")
-                
-            self.PT = [inp["initial"]["pressure"],inp["initial"]["temperature"]]
+                    +" is may be slower than running in parallel and usually should be"
+                    +" confined to debugging! Ignore this message if you are"
+                    +" running lots of uh2sc runs in parallel. uh2sc will fail if you set"
+                    +" input['calculations']['run_parallel']=True in the input file"
+                    +" and also try to run several simulation in parallel using joblib!")
             
-            time_step = self.inputs["initial"]["time_step"]
+            if not "num_processors" in self.inputs["calculation"]:
+                self.inputs["calculation"]["num_processors"] = 1
+                
+            self.PT = [self.inputs["initial"]["pressure"],self.inputs["initial"]["temperature"]]
+            
             self.time_step = self.inputs["initial"]["time_step"]
             
             self._end_time = self.inputs["calculation"]["end_time"]
@@ -271,11 +323,6 @@ class Model(AbstractComponent):
         # once self.run is invoked.
         
         self.converged_solution_point = False
-        
-        if isinstance(inp,str):
-            self.input_file = inp
-        else:
-            self.input_file = None
         
         self.time = 0.0
         
@@ -306,8 +353,9 @@ class Model(AbstractComponent):
             elif kwargs["type"] == ComponentTypes(3).name:
                 num_wells = 1
             else:
-                raise ValueError(f"Only valid kwargs['type']:"
-                        +f"{' '.join([ct.name for ct in ComponentTypes])}")
+                _str0 = ' '.join([ct.name for ct in ComponentTypes])
+                raise ValueError("Only valid kwargs['type']:"
+                        +_str0)
                 
         if "USE_RELATIVE_CONVERGENCE" in solver_options:
             
@@ -340,7 +388,7 @@ class Model(AbstractComponent):
             # changing mass flow in/out is ever added (i.e. compressor pressure level etc...))
             well_ind = [idx for idx,desc in enumerate(self.xg_descriptions) 
                         if "Well" in desc and "mass flow for" in desc]
-            if len(well_ind) != 1:
+            if len(well_ind) != self.number_fluids:
                 raise DeveloperError("There must only be 1 well index. The current"
                                  +" model needs updating if there is more than one or 0!")
             self._input_ind = well_ind[0]
@@ -392,6 +440,49 @@ class Model(AbstractComponent):
 
         out_arr = np.concat([keys.reshape([len(keys),1]),values_all],axis=1)
         return column_names, out_arr
+    
+    def clear_unpickleable(self):
+        """
+        You have to do this in order for the model object to be
+        pickleable.
+        
+        
+        
+        """
+        for name, val in self.fluids.items():
+            if isinstance(val,dict):
+                for fluid_name, fluid in val.items():
+                    if fluid.is_active:
+                        fluid.del_state()
+                    if hasattr(fluid,"_logging"):
+                        fluid._logging = None
+            else:
+                if val.is_active:
+                    val.del_state()
+                if hasattr(val,"_logging"):
+                    val._logging = None
+                
+                    
+        if self.components['cavern']._fluid_m1.is_active:
+            self.components['cavern']._fluid_m1.del_state()
+        if hasattr(self.components['cavern']._fluid_m1,"_logging"):
+            self.components['cavern']._fluid_m1._logging = None
+            
+        self.logging = None
+        
+        can_pickle = PickleHelp.find_unpickleable_attrs(self)
+        
+        if not can_pickle:
+            raise DeveloperError("The Model class no longer can pickle. "
+            +"Please regard the previous messages and add new unpickleable "
+            +"attribues to the 'clear_unpickleable' method!")
+        
+    
+
+    def pickle(self,pickle_filepath):
+        self.clear_unpickleable()
+        pickle.dump(self,open(pickle_filepath, 'wb'))
+                
 
     def write_results(self,filename="uh2sc_results.csv"):
         """
@@ -459,16 +550,10 @@ class Model(AbstractComponent):
         sim_start_time = time.perf_counter()
         
         if new_inp is not None:
-            raise NotImplemented("The ability to add new input "
+            raise NotImplementedError("The ability to add new input "
                                  +"has not been completed!")
             self.inputs = self._read_input(new_inp)
             self._validate()
-            time_step = self.inputs["calculation"]["time_step"]
-
-            nstep = int(self.inputs["calculation"]["end_time"]
-
-                        / time_step
-                        + 1)
 
             for component_name, component in self.components.items():
                 if component.component_type == 'Well':
@@ -511,15 +596,26 @@ class Model(AbstractComponent):
         self.time_m1 = self.time
 
         step_num = 0
+        hit_final_time_step = False
         while self.time < self._end_time:
             x_org = self.get_x()
+            
+            #print before shifting.
+            for xval, xdesc in zip(x_org,self.xg_descriptions):
+                self.logging.info("Cavern state at {self.time}: {xdesc} = {xval}")
+            
+            
 
             self.logging.info(f"UH2SC model beginning calculations for time={self.time}.")
             # solve the current time step
             
             stime = time.perf_counter()
-
-            tup = self.solver.solve(self)
+            
+            try:
+                tup = self.solver.solve(self)
+            except CavernStateOutOfOperationalBounds as csob:
+                self.logging.error("Exiting simulation early because of outofbounds")
+                break
             
             etime = time.perf_counter()
             
@@ -529,12 +625,13 @@ class Model(AbstractComponent):
             
             if solver_converged:
                 # shift the time
-                if 'cavern' in self.components:
-                    if hasattr(self.components['cavern'], "troubleshooting"):
-                        print(self.time)
+                
+                
 
                 # update the state of the model
                 self.shift_solution()
+                if self._shift_solution_failed:
+                    break
 
                 self.logging.info(f"Completed time {self.time} with time step "
                                   +f"{self.time_step}. The simulation is "
@@ -555,6 +652,8 @@ class Model(AbstractComponent):
             if solver_converged:
                 
                 self.time_m1 = self.time
+                
+                
 
 
                 # gather independent variables if requested.
@@ -580,11 +679,18 @@ class Model(AbstractComponent):
                         self.time_step = proposed_time_step
                     else:
                         self.time_step = self._max_time_step
+                        
+                # assure time step does not exceed the end time.
+                if self.time + self.time_step > self._end_time:
+                    final_time_step = self._end_time - self.time
+                    self.time_step = final_time_step
+                    hit_final_time_step = True
 
             else:
                 self.logging.info(f"Failed to complete {self.time} with time"
                                   +f" step {self.time_step}. Reducing time step"
                                   +f" to {0.5*self.time_step}")
+                
                 
                 if self.time_step > self._min_time_step:
                     
@@ -592,27 +698,53 @@ class Model(AbstractComponent):
                     if step_num > 20:
                         
                         if not self.is_single_component_test:
-                            proposed_time_step_mult = self._time_advice.fit_and_predict(step_num,default_value=0.5)
+                            proposed_time_step_mult = self._time_advice.fit_and_predict(step_num,
+                                                                                        default_value=0.5)
                         else:
-                            proposed_time_step_mult = 1.5
+                            proposed_time_step_mult = 0.5
                     
-                        self._time_advice.fit(step_num)
-                        proposed_time_step_mult = self._time_advice.predict(default_value=0.5)
                     else:
                         proposed_time_step_mult = 0.5
                     
                     self.time_step = proposed_time_step_mult*self.time_step
                     
+                    # assure time step does not exceed the end time.
+                    if self.time + self.time_step > self._end_time:
+                        final_time_step = self._end_time - self.time
+                        self.time_step = final_time_step
+                        
+                        hit_final_time_step = True
+                    
                     # try resetting and trying a smaller time step
                     self.load_var_values_from_x(x_org)
+                    if self._load_vars_failed:
+                        break
 
 
                 else:
                     msg = tup[1]
-                    raise NewtonSolverError("The Newton solver returned an"
+                    error_string = ("The Newton solver returned an"
                             +f" error for time {self.time} and the time step has"
                             +" reached the minimum allowed value. The solver"
                             +f" message is: {msg}")
+                    if hit_final_time_step:
+                        # we are going to let this go, perhaps a really small
+                        # time step is being taken that is not conducive to 
+                        # an implicit convergence.
+                        
+                        warning_string = ("The final time step of "
+                        +f"{final_time_step} seconds failed to converge but "
+                        +"the output has been provided anyway since the rest "
+                        +"of the simulation converged. This sometimes happens"
+                        +" when a very small step is needed to reach the end "
+                        +f"time. The error is:\n\n {error_string}")
+                        
+                        self.logging.warning(warning_string)
+                        
+                    else:
+                        self.logging.error(error_string)
+                        break
+                        
             step_num += 1
         
         sim_end_time = time.perf_counter()
@@ -621,6 +753,8 @@ class Model(AbstractComponent):
                      +f" seconds ({elapsed/3600:.4f} hours)")
         
         self.logging.propagate = True
+        
+        return elapsed
 
     @property
     def next_adjacent_components(self):
@@ -706,12 +840,22 @@ class Model(AbstractComponent):
 
     def load_var_values_from_x(self, xg_new):
         for cname, component in self.components.items():
-            component.load_var_values_from_x(xg_new)
+            try:
+                self._load_vars_failed = False
+                component.load_var_values_from_x(xg_new)
+            except CavernStateOutOfOperationalBounds as csob:
+                self.logging.error("Exiting simulation early because of outofbounds")
+                self._load_vars_failed = True
 
 
     def shift_solution(self):
         for cname, component in self.components.items():
-            component.shift_solution()
+            try:
+                self._shift_solution_failed = False
+                component.shift_solution()
+            except CavernStateOutOfOperationalBounds as csob:
+                self.logging.error("Exiting simulation early because of outofbounds")
+                self._shift_solution_failed = True
 
     @property
     def independent_vars_descriptions(self):
@@ -902,7 +1046,6 @@ class Model(AbstractComponent):
                 height = self.test_inputs["height"]
                 inner_radius = self.test_inputs["inner_radius"]
                 adjacent_comps = {}
-                adjcomp_name = ADJ_COMP_TESTING_NAME
                 # backfit missing stuff to get the solution to work.
                 self.inputs["calculation"] = {}
                 self.inputs["calculation"]["end_time"] = self.test_inputs["end_time"]
@@ -1021,15 +1164,17 @@ class Model(AbstractComponent):
                 rfluid.del_state()
 
                 self.fluids['cavern_well'] = rfluid
+                
+            self._end_time = self.inputs["calculation"]["end_time"]
+            self._run_parallel = True
+            self._max_time_step = self.inputs["calculation"]["max_time_step"]
 
         else:
             self.prev_components = self.inputs['wells']
             ghe_name = self.inputs['cavern']['ghe_name']
             self.next_components = {ghe_name:self.inputs["ghes"][ghe_name]}
 
-        cavern = self.inputs["cavern"]
         beg_idx = len(xg)
-
         
         #instantiate for some calculations!
         PT_list = [self.inputs['initial']['pressure'],self.inputs['initial']['temperature']]
@@ -1043,7 +1188,6 @@ class Model(AbstractComponent):
 
         #geometry
         area_horizontal = np.pi * self.inputs['cavern']['diameter']**2/4
-        area_vertical = np.pi * self.inputs['cavern']['diameter'] * self.inputs["cavern"]["height"]
         height_total = self.inputs["cavern"]["height"]
         height_brine = self.inputs['initial']['liquid_height']
         vol_brine = height_brine * area_horizontal
@@ -1116,11 +1260,31 @@ class Model(AbstractComponent):
         """
 
         if len(self.test_inputs) != 0:
+            # use this section to fill in stuff that isn't built 
+            # because your just trying to run a well in an isolated sense.
             find_all_fluids(self)
+            
+            # pulled from Nieland verification.
+            self.residual_normalization = {'cavern_gas_energy': 3591431272594.7725, 
+                                                'cavern_gas_mass': 726543.9913691991, 
+                                                'cavern_pressure': 20027490.643315244, 
+                                                'temperature_norm': 110, 
+                                                'heat_flux_norm': 20783745.790479008, 
+                                                'mass_flow_norm': 4.204536987090273, 
+                                                'brine_mass': 726543.9913691991, 
+                                                'brine_energy': 3591431272594.7725}
+            
+            self.PT = [self.inputs['initial']['pressure'],self.inputs['initial']['temperature']]
 
+            self.number_fluids = len(self.fluids['cavern'].fluid_names())
             self.test_inputs["cavern"] = {"cavern":SaltCavern(self.inputs,global_indices=
                                               (-2,-1),
                                               model=self)}
+            self._end_time = self.inputs['calculation']['end_time']
+            self._run_parallel = True
+            self.time_step = self.inputs['initial']['time_step']
+            self._max_time_step = self.time_step
+            self._min_time_step = 100
 
         else:
             pass
@@ -1388,7 +1552,15 @@ class Model(AbstractComponent):
             self._temperature_bounds["minor_warning"][1] = 340
 
         if "min_operational_pressure_ratio" in self.inputs["cavern"]:
-            self._pressure_bounds["minor_warning"][0] = self.inputs["cavern"]["min_operational_pressure_ratio"]*opres
+            min_pres_ratio = self.inputs["cavern"]["min_operational_pressure_ratio"]
+            if min_pres_ratio == 0:
+                # atmospheric will be the lowest allowed to avoid gas model problems
+                self._pressure_bounds["minor_warning"][0] = 100000
+                
+            else:
+                
+                self._pressure_bounds["minor_warning"][0] = self.inputs["cavern"]["min_operational_pressure_ratio"]*opres
+
         else:
             self._pressure_bounds["minor_warning"][0] = 0.5*opres
         if "max_operational_pressure_ratio" in self.inputs["cavern"]:
@@ -1415,10 +1587,7 @@ class Model(AbstractComponent):
 
         cfl = self.fluids['cavern']
         cfl.set_state(CP.AbstractState)
-
-        temp = cfl.T()
-        pres = cfl.p()
-
+        
 
         cfl.update(CP.PT_INPUTS,self._pressure_bounds["minor_warning"][0],
                                 self._temperature_bounds["minor_warning"][0])
@@ -1454,12 +1623,8 @@ class Model(AbstractComponent):
         flux_norm = mass_flow_norm * cfl.hmass()
         
         # brine norms
-        brine_volume = (0.25 * np.pi * self.inputs['cavern']['diameter'] ** 2
-                        * self.inputs['initial']['liquid_height'])
         _bw = CP.AbstractState("HEOS","Water")
         _bw.update(CP.PT_INPUTS,self._pressure_bounds["error"][1],self._temperature_bounds["error"][1])
-        brine_mass = _bw.rhomass() * brine_volume
-        brine_energy = brine_mass * _bw.hmass()
         
         extra_factor = 1
         self.residual_normalization = {"cavern_gas_energy":extra_factor * flux_norm * self.inputs['calculation']['max_time_step'],
@@ -1472,7 +1637,7 @@ class Model(AbstractComponent):
                                        "brine_energy": extra_factor * flux_norm * self.inputs['calculation']['max_time_step']}
 
         if "solution_tolerance" in self.inputs["calculation"]:
-            tol_factor = self.inputs["calcualtion"]["solution_tolerance"]
+            tol_factor = self.inputs["calculation"]["solution_tolerance"]
         else:
             tol_factor = 1.0e-5
 

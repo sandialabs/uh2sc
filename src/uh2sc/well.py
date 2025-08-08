@@ -38,6 +38,9 @@ class Well(AbstractComponent):
     at which a pipe flow exits into the salt cavern
 
 
+    THIS ONLY SUPPORT ONE WELL CURRENTLY! I AM MARKING PARTS OF THE CODE
+    THAT WILL NEED TO CHANGE WHEN MULTIPLE WELLS IS IMPLEMENTED WITH THIS STRING
+    "MULTI_WELL_CHANGE_NEEDED"
 
     """
 
@@ -450,7 +453,8 @@ class VerticalPipe(object):
         ------
         well : uh2sc.well.Well - the well this pipe is in.
         
-        fluid : CoolProp.CoolProp.AbstractState - the fluid mixture (or pure_fluid)
+        
+        fluid : fluid.FluidWithFitOption - the fluid mixture (or pure_fluid)
                 being moved through the pipe. This fluid is created at the model
                 level so that it contains every pure_fluid throughout the entire
                 model even if the molefractions are zero.

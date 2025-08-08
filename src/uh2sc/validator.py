@@ -243,7 +243,23 @@ def validation(inp):
                       +"Known valid backends are (others may exist): "
                       +f"{known_valid_backends}. Exception raised: {exc}")
 
-
+    def assure_only_one_well_for_now(field,value,error):
+        num_well = 0
+        for well_name, well in value.items():
+            num_well += 1
+            
+        if num_well > 1:
+            error(field, "UH2SC does not currently handle more than one well. "
+                  +f"You must only simulate one well! you have entered:\n\n {value}\n\n")
+            
+    def assure_only_one_ghe_for_now(field,value,error):
+        num_ghe = 0
+        for ghe_name, ghe in value.items():
+            num_ghe += 1
+            
+        if num_ghe > 1:
+            error(field, "UH2SC does not currently handle more than one ghe. "
+                  +f"You must only simulate one ghe! you have entered:\n\n {value}\n\n")
 
     # you must make a new entry if you put a new name for check_with in
     # the YAML schemas
@@ -259,7 +275,9 @@ def validation(inp):
                   "max_time_step_check":max_time_step_check,
                   "min_time_step_check":min_time_step_check,
                   "valve_pressure_check":valve_pressure_check,
-                  "valid_backend_check":valid_backend_check}
+                  "valid_backend_check":valid_backend_check,
+                  "assure_only_one_well_for_now":assure_only_one_well_for_now,
+                  "assure_only_one_ghe_for_now":assure_only_one_ghe_for_now}
 
     def _add_check_with_functions(schema,dispatcher):
         # recursive function
