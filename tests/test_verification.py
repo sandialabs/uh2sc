@@ -202,6 +202,8 @@ def run_gas_type(gas_type, subd, run_verification, nieland_obj, con, run_outer_p
         if not run_verification:
             # just run for 2 days and stop   TODO
             inp['calculation']['end_time'] = 10 * 24 * 3600
+        else:
+            print(f"Running gas type: {gas_type}, for number of days per cycle: {days_per_cycle}")
 
         # create model object
         model = Model(inp)
@@ -210,6 +212,7 @@ def run_gas_type(gas_type, subd, run_verification, nieland_obj, con, run_outer_p
         """
         RUN
         """
+        
         model.run(log_file=f"nielson_verification_{gas_type}_{days_per_cycle}.log")
 
         v_df = model.dataframe()
@@ -335,27 +338,36 @@ class Nieland2008CavernCase(object):
                                        90:"nieland_verification_h2_4_cycles.yml",
                                       360:"nieland_verification_h2_1_cycles.yml"}
                              },
-                       'Methane':{'days_per_cycle':[30,90,360],
-                            'error':{30:{'max':1.0,
-                                         'min':3.5,
-                                         'mean':1.2},
-                                     90:{'max':2.4,
-                                         'min':1.1,
-                                         'mean':0.7},
-                                    360:{'max':2.4,
-                                         'min':0.7,
-                                         'mean':1.4}},
-                            'file':{30:"2008_Nieland_Fig13_12_cycles_per_year.csv",
-                                    90:"2008_Nieland_Fig13_4_cycles_per_year.csv",
-                                   360:"2008_Nieland_Fig13_1_cycle_per_year.csv"},
-                            'initial_temperatures':{30:330.8,
-                                                    90:324.4,
-                                                   360:319.8},
-                            'inputs':{30:"nieland_verification_methane_12_cycles.yml",
-                                      90:"nieland_verification_methane_4_cycles.yml",
-                                     360:"nieland_verification_methane_1_cycles.yml"}
-                            }
+                            'Methane':{'days_per_cycle':[30,90,360],
+                                 'error':{30:{'max':1.0,
+                                              'min':3.5,
+                                              'mean':1.2},
+                                          90:{'max':2.4,
+                                              'min':1.1,
+                                              'mean':0.7},
+                                         360:{'max':2.4,
+                                              'min':0.7,
+                                              'mean':1.4}},
+                                 'file':{30:"2008_Nieland_Fig13_12_cycles_per_year.csv",
+                                         90:"2008_Nieland_Fig13_4_cycles_per_year.csv",
+                                        360:"2008_Nieland_Fig13_1_cycle_per_year.csv"},
+                                 'initial_temperatures':{30:330.8,
+                                                         90:324.4,
+                                                        360:319.8},
+                                 'inputs':{30:"nieland_verification_methane_12_cycles.yml",
+                                           90:"nieland_verification_methane_4_cycles.yml",
+                                          360:"nieland_verification_methane_1_cycles.yml"}
+                                 }
                        }
+        ## This can be used to just run one case that didn't do so well!
+        # self.study_input = {'Methane':{'days_per_cycle':[30],
+        #      'error':{30:{'max':1.0,
+        #                   'min':3.5,
+        #                   'mean':1.2}},
+        #      'file':{30:"2008_Nieland_Fig13_12_cycles_per_year.csv"},
+        #      'initial_temperatures':{30:330.8},
+        #      'inputs':{30:"nieland_verification_methane_12_cycles.yml"}
+        #      }}
 
 
 class TestSaltCavernVerification(unittest.TestCase):
@@ -366,22 +378,45 @@ class TestSaltCavernVerification(unittest.TestCase):
 
         # one parameter that moves this to a long run -time 
         # verification case with plots.
-        cls.run_verification = True
+        cls.run_verification = False
         
         # running parallel keeps from calculating the Jacobian 
         # only run parallel if run_verification=True
-        cls.run_parallel = True #cls.run_verification
+        cls.run_parallel = cls.run_verification
         
         cls.filedir = os.path.dirname(__file__)
         
         cls.run_all = True
         
-        cls.create_plots = True
+        cls.create_plots = False
 
     @classmethod
     def tearDownClass(cls):
         pass
 
+    def test_mdot_accuracy(self):
+        if self.run_all:
+            
+            # We need to get more accurate than this! We are at 0.25% accuracy on
+            # a mass balance that must be exact. It is not the solution tolerance.
+            # I will have to figure this out later!
+        
+            test_file = os.path.join(os.path.dirname(__file__),
+                                     "test_data",
+                                     "nieland_verification_h2_SHORT.yml")
+            model = Model(test_file)
+            
+            model.run(log_file="test_mdot_accuracy.log")
+            
+            df = model.dataframe()
+            
+            delta_mass = df['Cavern H2 mass (kg)'].iloc[-1] - df['Cavern H2 mass (kg)'].iloc[0]
+
+            self.assertTrue(delta_mass < 1005 and delta_mass > 995)
+            
+
+        
+        
 
 
     def test_nieland_verification(self):
@@ -400,7 +435,7 @@ class TestSaltCavernVerification(unittest.TestCase):
         model because Nieland's results are purely model-based.
 
         """
-        if self.run_all:
+        if True: #self.run_all:
             con = Constants()
     
             study_input = self.nieland_obj.study_input
@@ -439,7 +474,7 @@ class TestSaltCavernVerification(unittest.TestCase):
         
         """
         
-        if False: #self.run_all:
+        if self.run_all:
             
             infile = os.path.join(self.filedir,"test_data","gas_mixture_test_too_fast_of_flow.yml")
             with open(infile, 'r', encoding='utf-8') as infile:
@@ -534,7 +569,7 @@ class TestSaltCavernVerification(unittest.TestCase):
     
     def test_hanEtAl_air_with_actual_test_data(self):
         
-        if False: #self.run_all:
+        if self.run_all:
         
             #load input file
             infile = os.path.join(self.filedir,"test_data","HanEtAl_2022_24hr_ops_validation_air.yml")
@@ -609,8 +644,7 @@ class TestSaltCavernVerification(unittest.TestCase):
                 print(fail_str)
                 self.assertTrue(False)
             
-            
-            # HERE IS WHERE I LEFT OFF
+
             if self.create_plots and self.run_verification:
                 fig,axl = plt.subplots(3,1,figsize=(10,20))
                 
@@ -667,6 +701,7 @@ class TestSaltCavernVerification(unittest.TestCase):
                 
             
                 plt.show()
+            return
                 
         logging.warning("Skipping test_hanEtAl_air_with_actual_test_data because self.run_all=False!")
 

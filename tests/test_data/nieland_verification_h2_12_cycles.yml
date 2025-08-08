@@ -53,7 +53,7 @@ initial:  #
   liquid_temperature: 322.5 # ussually 2-4 C cooler than the gas
 calculation:
   min_time_step: 1200 # seconds -
-  max_time_step: 172800
+  max_time_step: 86400
   end_time: 31104000 #3456000 #
   run_parallel: true
   solution_tolerance: 0.00001

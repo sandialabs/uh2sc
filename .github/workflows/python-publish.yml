@@ -1,40 +1,37 @@
-# This workflow will upload a Python Package using Twine when a release is created
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python#publishing-to-package-registries
-
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
-name: Upload Python Package
+name: Publish Python 🐍 uh2sc distribution 📦 to PyPI
 
 on:
   release:
     types: [published]
 
-permissions:
-  contents: read
-
 jobs:
-  deploy:
-
+  build-and-publish:
     runs-on: ubuntu-latest
+    environment:
+      name: pypi  # Optional: Define an environment for added security
+      url: https://pypi.org/p/uh2sc/ # Replace with your package URL
+    permissions:
+      id-token: write # THIS IS MANDATORY for Trusted Publishing
+      contents: read # Allow checkout to read repository contents
 
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up Python
-      uses: actions/setup-python@v3
-      with:
-        python-version: '3.x'
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install build
-    - name: Build package
-      run: pwd
-      run: python -m build
-    - name: Publish package
-      uses: pypa/gh-action-pypi-publish@27b31702a0e7fc50959f5ad993c78deac1bdfc29
-      with:
-        user: __token__
-        password: ${{ secrets.PYPI_API_TOKEN }}
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12" # Specify your Python version
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build # or your preferred build system like setuptools_scm
+
+      - name: Build package distributions
+        run: python -m build
+
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # No need for username and password with trusted publishers
+

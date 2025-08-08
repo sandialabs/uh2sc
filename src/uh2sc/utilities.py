@@ -60,6 +60,60 @@ def _update_fluid(fluid_tup,pres,temp):
     return fluid
 
 
+def integrate_piecewise_linear(t0, t1, t_samples, y_samples, epsilon=1e-6):
+    t_samples = np.asarray(t_samples, dtype=float)
+    y_samples = np.asarray(y_samples, dtype=float)
+
+    if t_samples.ndim != 1 or y_samples.ndim != 1:
+        raise ValueError("t_samples and y_samples must be 1-D arrays.")
+    if len(t_samples) != len(y_samples):
+        raise ValueError("t_samples and y_samples must have the same length.")
+    if len(t_samples) < 2:
+        raise ValueError("Need at least two sample points.")
+    if not np.all(np.diff(t_samples) > 0):
+        raise ValueError("t_samples must be strictly increasing.")
+
+    t_min, t_max = t_samples[0], t_samples[-1]
+
+    # Handle numeric noise tolerance
+    if t0 < t_min - epsilon or t1 > t_max + epsilon:
+        raise ValueError(f"Integration bounds [{t0}, {t1}] are outside sample range [{t_min}, {t_max}] beyond tolerance.")
+    if t0 < t_min:
+        t0 = t_min
+    if t1 > t_max:
+        t1 = t_max
+
+    if t0 > t1:
+        raise ValueError("t0 must be <= t1.")
+
+    # Slice the relevant segment for integration
+    mask = (t_samples >= t0) & (t_samples <= t1)
+    t_seg = t_samples[mask]
+    y_seg = y_samples[mask]
+
+    # Ensure t0 and t1 are included exactly
+    if t0 not in t_seg:
+        y0 = np.interp(t0, t_samples, y_samples)
+        t_seg = np.insert(t_seg, 0, t0)
+        y_seg = np.insert(y_seg, 0, y0)
+    if t1 not in t_seg:
+        y1 = np.interp(t1, t_samples, y_samples)
+        t_seg = np.append(t_seg, t1)
+        y_seg = np.append(y_seg, y1)
+
+    return np.trapezoid(y_seg, t_seg)
+
+
+# convenience wrapper for your use:
+def average_mdot_for_step(model, pipe):
+    t0 = model.time
+    t1 = model.time + model.time_step
+    mass_total =  integrate_piecewise_linear(t0, t1, pipe.valve['time'], pipe.valve['mdot'])
+    if t1 == t0:
+        return 0.0
+    else:    
+        return mass_total/(t1-t0)
+
 
 def filter_cpu_count(cpu_count):
     """

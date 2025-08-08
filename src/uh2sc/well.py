@@ -10,7 +10,8 @@ from CoolProp import CoolProp as CP
 from uh2sc.constants import Constants as const
 from uh2sc.transport import annular_nusselt, circular_nusselt
 from uh2sc.utilities import (calculate_component_masses,
-                             calculate_cavern_pressure)
+                             calculate_cavern_pressure,
+                             average_mdot_for_step)
 from uh2sc.abstract import AbstractComponent
 from uh2sc.constants import Constants
 
@@ -228,10 +229,12 @@ class Well(AbstractComponent):
         for comp_name, comp in self.next_adjacent_components.items():
             for pname, pipe in self.pipes.items():
                 
-                
-                mdot = np.interp(self._model.time,pipe.valve['time'],pipe.valve['mdot'])
-                total_flow = pipe.mass_rates[0,:].sum()
-                
+                # this must be the average mdot over whatever changes happen
+                # to the mass inflow during the time step. CONSERVE MASS
+                # OLD WAY THAT SETS CONSTANT - requires just right time steps for 
+                # a good mass balance
+                #mdot = np.interp(self._model.time,pipe.valve['time'],pipe.valve['mdot'])
+                mdot = average_mdot_for_step(self._model, pipe)
                 if mdot > 0: # flow is into the cavern
                     fluid = pipe.fluid
                     t_in = pipe.valve['reservoir']['temperature']

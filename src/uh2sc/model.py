@@ -602,7 +602,7 @@ class Model(AbstractComponent):
             
             #print before shifting.
             for xval, xdesc in zip(x_org,self.xg_descriptions):
-                self.logging.info("Cavern state at {self.time}: {xdesc} = {xval}")
+                self.logging.info(f"Cavern state at {self.time}: {xdesc} = {xval}")
             
             
 
@@ -653,22 +653,14 @@ class Model(AbstractComponent):
                 
                 self.time_m1 = self.time
                 
-                
-
-
-                # gather independent variables if requested.
-                if self._get_independent_vars:
-                    self._independent_vars[self.time] = deepcopy(
-                        self.evaluate_residuals(get_independent_vars=
-                                                self._get_independent_vars))
-
                 # increase the time step if it has shrunk
                 if self.time_step < self._max_time_step:
                     
                     if step_num > 20:
                         
                         if not self.is_single_component_test:
-                            proposed_time_step_mult = self._time_advice.fit_and_predict(step_num,default_value=1.5)
+                            proposed_time_step_mult = self._time_advice.fit_and_predict(step_num,
+                                                                                        default_value=1.5)
                         else:
                             proposed_time_step_mult = 1.5
                     else:
@@ -685,6 +677,13 @@ class Model(AbstractComponent):
                     final_time_step = self._end_time - self.time
                     self.time_step = final_time_step
                     hit_final_time_step = True
+                    
+                    
+                # gather independent variables if requested.
+                if self._get_independent_vars:
+                    self._independent_vars[self.time] = deepcopy(
+                        self.evaluate_residuals(get_independent_vars=
+                                                self._get_independent_vars))
 
             else:
                 self.logging.info(f"Failed to complete {self.time} with time"
@@ -1212,9 +1211,34 @@ class Model(AbstractComponent):
         # add all cavern variables
         x_desc += ["Cavern gas temperature (K)"]
         xg += [self.inputs["initial"]["temperature"]]
-
+        
+        # the initial wall temperature is estimated to be the average of the farfield temperature 
+        # and the initial gas temperature
         x_desc += ["Cavern wall temperature (K)"]
-        xg += [self.inputs["initial"]["temperature"]]
+        
+
+        if self.is_test_mode:
+            farfield_temp = self.inputs["initial"]["temperature"]
+        else:
+            # only 1 GHE is allowed for now!
+            ghe_dict = self.inputs["ghes"]
+            for ghe_name, ghe_dict2 in ghe_dict.items():
+                farfield_temp = ghe_dict2["farfield_temperature"]
+        
+        # CHANGE NEEDED - You should be able to calculate the amount of 
+        # heat that can possibly be transfered and how much that will 
+        # allow flux to become. If the flux cannot match the temperature
+        # difference, then you will not converge. A smarter model will not
+        # allow this to happen.
+        if farfield_temp - self.inputs["initial"]["temperature"] > 5.0:
+            self.logging.warning("There is a greater than 5K difference between"+
+            " the initial gas temperature {self.inputs['initial']['temperature']}"
+            +" and the farfield temperature {farfield_temp}. If the GHE doesn't"
+            +" have enough elements, the model will be unlikely to converge "
+            +"because flux will not be able to heat/cool the wall off fast "
+            +"enough!")
+        
+        xg += [(self.inputs["initial"]["temperature"]+farfield_temp)/2]
 
         #x_desc += ["Cavern pressure at average height from cavern top to liquid surface (Pa)"]
         #xg += [self.inputs["initial"]["pressure"]]

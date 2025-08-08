@@ -584,9 +584,8 @@ class SaltCavern(AbstractComponent):
 
         ### -----   CAVERN ENERGY    ----  ###
         #cavern
-
         residuals[_eqn] = ((dt
-                           * (cavern_mass_energy_flow
+                           * (self._sum_or_float(cavern_mass_energy_flow)
                            + self._sum_or_float(q_cavern_wall)
                            - q_rad
                            - q_cavern_brine
@@ -796,11 +795,11 @@ class SaltCavern(AbstractComponent):
         for fluid_name in self._fluid.fluid_names():
             e_list += [f"Cavern conservation of mass for {fluid_name}"]
 
-        e_list += ["Heat flux continuity between cavern and axisymmetric heat transfer"]
-
         if self._model.is_test_mode:
-            e_list += [f"Temperature continuity between cavern and axisymmetric heat transfer 1"]
-        else:
+            e_list += ["Heat flux continuity between cavern and axisymmetric heat transfer"]
+
+
+        if not self._model.is_test_mode:
             for idx, t_axisym in enumerate(self._t_axisym):
                 e_list += [f"Temperature continuity between cavern and axisymmetric heat transfer {idx}"]
 
@@ -1058,7 +1057,7 @@ class SaltCavern(AbstractComponent):
                         rfluid = wfluid
                         num_well += 1
                 if num_well > 1:
-                    raise NotImplemented("The input must have two wells in it."
+                    raise NotImplementedError("The input must have two wells in it."
                                          +" The UH2SC code is not yet set up "+
                                          "to handle this")
 
@@ -1114,8 +1113,8 @@ class SaltCavern(AbstractComponent):
                         cavern_mass_energy_flow += v_mdot.sum() * wfluid.hmass()
                         cavern_vapor_energy_flow += 0.0   #TODO - allow water vapor below saturation pressure to be present.
                     else:
-                        cavern_mass_energy_flow += v_mdot_out.sum() * gas_mass_fraction * hmass
-                        cavern_vapor_energy_flow += v_mdot_out.sum() * water_vapor_mass_fraction * h_vapor
+                        cavern_mass_energy_flow += cavern_gas_mass_flow * hmass
+                        cavern_vapor_energy_flow += cavern_vapor_mass_flow * h_vapor
                         
                     wfluid.del_state()
 

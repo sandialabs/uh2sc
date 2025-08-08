@@ -44,7 +44,7 @@ ghes:
       Qend: 0.0
     number_elements: 100
 initial:  #
-  time_step: 86400
+  time_step: 43200
   temperature: 330.755
   pressure: 17249525.004323125 #Pascal
   fluid: "Methane"
@@ -52,7 +52,7 @@ initial:  #
   liquid_height: 1.0 # in meters
   liquid_temperature: 322.5 # ussually 2-4 C cooler than the gas
 calculation:
-  max_time_step: 172800 # seconds - 1 day time steps
+  max_time_step: 43200
   min_time_step: 1200
   end_time: 31104000 #3456000 #
   run_parallel: true

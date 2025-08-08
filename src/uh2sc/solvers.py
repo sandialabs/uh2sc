@@ -280,6 +280,16 @@ class NewtonSolver(object):
                 r_norm = new_norm
             else:
                 r = model.evaluate_residuals()
+                
+                # do some debugging logging
+                model.logging.debug("----------------------------------------")
+                model.logging.debug("BEGIN RESIDUALS")
+                r_ = r[0:20]
+                equ = model.equations_list()[0:20]
+                [model.logging.debug(f"residual for {equn_desc}={res})") for res,equn_desc in zip(r_,equ)]
+                model.logging.debug("END RESIDUALS")
+                model.logging.debug("----------------------------------------")
+                
                 r_norm = np.max(abs(r))
 
             if self.log_progress or ostream is not None:
@@ -311,6 +321,7 @@ class NewtonSolver(object):
                 percent_change = (delta / reference) * 100
                 if percent_change < 0.3:
                     model.logging.info("Solution stagnated and needs a smaller time step!")
+
                     return (
                         SolverStatus.error,
                         "Solver stagnated and needs a smaller time step",
@@ -324,6 +335,7 @@ class NewtonSolver(object):
                                                            outer_iter):
                 fail_str =("Solver is unlikely to converge based on "
                            +"exponential projection, trying a smaller time step")
+
                 model.logging.info("  " + fail_str)
                 return (
                     SolverStatus.error,

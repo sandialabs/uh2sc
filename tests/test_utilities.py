@@ -16,7 +16,8 @@ import numpy as np
 from uh2sc.model import Model
 from uh2sc.utilities import (process_CP_gas_string, filter_cpu_count,
                              find_all_fluids, reservoir_mass_flows,
-                             calculate_component_masses)
+                             calculate_component_masses,
+                             integrate_piecewise_linear)
 from CoolProp import CoolProp as CP
 
 class TestUtilities(unittest.TestCase):
@@ -38,6 +39,63 @@ class TestUtilities(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         pass
+
+    def test_integrate_mdot(self):
+        t_start = 0
+        t_end = 10
+        time_points = [0,1,2,3,4,5,6,7,8,9,10]
+        
+        
+        mdot = integrate_piecewise_linear(t_start, t_end, time_points, time_points) #mdot_points)
+        
+        mdot_points = [-1,1,-1,1,-1,1,-1,1,-1,1]
+        
+        self.assertTrue(mdot==50)
+        
+        t_end = 9
+        
+        mdot2 = integrate_piecewise_linear(t_start, t_end, time_points[:-1], mdot_points)
+        
+        self.assertAlmostEqual(mdot2,0.0)
+        
+        t_start = 1.5
+        t_end = 8.25
+        
+        
+        
+        mdot3 = integrate_piecewise_linear(t_start, t_end, time_points[:-1], mdot_points)
+        
+        self.assertAlmostEqual(mdot3,-0.4375)
+        
+        # ok assert errors
+        
+        t_start = -1
+        with self.assertRaises(ValueError):
+            integrate_piecewise_linear(t_start, t_end, time_points[:-1], mdot_points)
+        
+        
+        mdot_2d = np.zeros([3,2,2])
+        with self.assertRaises(ValueError):
+            integrate_piecewise_linear(t_start, t_end, time_points[:-1], mdot_2d)
+            
+        mdot_0d = np.asarray(2)
+        with self.assertRaises(ValueError):
+            integrate_piecewise_linear(t_start, t_end, time_points[:-1], mdot_0d)
+        
+        t_1_element = np.zeros([1])
+        with self.assertRaises(ValueError):
+            integrate_piecewise_linear(t_start, t_end, t_1_element, mdot_points)
+        with self.assertRaises(ValueError):
+            integrate_piecewise_linear(t_start, t_end, t_1_element, t_1_element)
+            
+        time_points_out_of_order = time_points
+        time_points_out_of_order[1] = -1
+        
+        with self.assertRaises(ValueError):
+            integrate_piecewise_linear(t_start, t_end, time_points_out_of_order[:-1], mdot_points)
+        
+        
+        
 
     def test_process_CP_gas_strings(self):
         """
