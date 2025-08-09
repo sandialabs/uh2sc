@@ -395,7 +395,7 @@ def validation(inp):
             validate_dict[cavern_ghe_name] = _LocalErrorObj()
             retval[cavern_ghe_name] = validate_dict[cavern_ghe_name].validate(
                         "The cavern ground heat exchanger"
-                    + f"(GHE) name `{inp["cavern"]["ghe_name"]}` does not"
+                    + f"(GHE) name `{inp['cavern']['ghe_name']}` does not"
                     + f"exist, the defined names for GHEs is: {gnames}")
 
         for name,well in inp["wells"].items():
@@ -405,7 +405,7 @@ def validation(inp):
                     validate_dict[well_ghe_name] = _LocalErrorObj()
                     retval[well_ghe_name] = validate_dict[well_ghe_name].validate(
                                 f"The well `{name}` ground heat exchanger"
-                                + f"(GHE) name `{inp["wells"][name]["ghe_name"]}` does not"
+                                + f"(GHE) name `{inp['wells'][name]['ghe_name']}` does not"
                                 + f"exist, the defined names for GHEs is: {gnames}")
 
 
