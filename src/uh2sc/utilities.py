@@ -7,6 +7,7 @@ Created on Wed Jan 17 15:05:14 2024
 
 import os
 from warnings import warn
+import importlib.resources
 
 import numpy as np
 from scipy.optimize import fsolve, root_scalar
@@ -309,7 +310,15 @@ def verify_mixture_bips(fluid_tup):
 
 
 def pickup_relevant_ml_models(model,cpfluid):
-    mldir = os.path.join(os.path.dirname(__file__),"..","ml_fluids")
+    try:
+        # This gets a context manager for the 'ml_fluids' directory within your 'uh2sc' package
+        # It returns a pathlib.Path object
+        mldir = importlib.resources.files("uh2sc") / ".." / 'ml_fluids'
+    except FileNotFoundError:
+        # Handle the case where the resource might not be found
+        print("Error: 'ml_fluids' directory not found in the package.")
+        # You might want to raise an exception, use a default value, or take other action
+        raise 
     file_ending = ".joblib"
     ml_models = [file for file in os.listdir(mldir) if file.endswith(file_ending)]
     

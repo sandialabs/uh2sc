@@ -13,6 +13,7 @@ import yaml
 import os
 from CoolProp import CoolProp as CP
 from warnings import warn
+import importlib.resources
 
 class _LocalErrorObj:
     """
@@ -289,7 +290,9 @@ def validation(inp):
                     _add_check_with_functions(val,dispatcher)
 
     #LOAD YAML FILE INPUT SCHEMAS
-    schema_path = os.path.join(os.path.dirname(__file__),"..","input_schemas")
+    
+    schema_path = importlib.resources.files("uh2sc") / ".." / 'input_schemas'
+    #schema_path = os.path.join(os.path.dirname(__file__),"..","input_schemas")
     schemas = {}
     for filename in os.listdir(schema_path):
         if filename[-4:] == ".yml":
@@ -300,7 +303,7 @@ def validation(inp):
 
     validate_dict = {}
     retval = {}
-
+    
     validate_dict['main input'] = Validator(schemas["schema_general"])
     retval['main input'] = validate_dict['main input'].validate(inp)
 

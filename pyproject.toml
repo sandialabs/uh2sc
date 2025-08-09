@@ -70,3 +70,6 @@ disable = [
 [tool.setuptools.dynamic]
 readme = {file = ["README.md"]}
 version = {attr = "uh2sc.__init__.__version__"}
+
+[tool.setuptools.package-data]
+"uh2sc" = ["ml_fluids/*","input_schemas/*"] # Includes all files directly inside 'ml_fluids'
