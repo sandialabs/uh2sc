@@ -291,7 +291,7 @@ def validation(inp):
 
     #LOAD YAML FILE INPUT SCHEMAS
     
-    schema_path = importlib.resources.files("uh2sc") / ".." / 'input_schemas'
+    schema_path = importlib.resources.files("uh2sc") / 'input_schemas'
     #schema_path = os.path.join(os.path.dirname(__file__),"..","input_schemas")
     schemas = {}
     for filename in os.listdir(schema_path):

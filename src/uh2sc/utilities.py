@@ -313,7 +313,7 @@ def pickup_relevant_ml_models(model,cpfluid):
     try:
         # This gets a context manager for the 'ml_fluids' directory within your 'uh2sc' package
         # It returns a pathlib.Path object
-        mldir = importlib.resources.files("uh2sc") / ".." / 'ml_fluids'
+        mldir = importlib.resources.files("uh2sc") / 'ml_fluids'
     except FileNotFoundError:
         # Handle the case where the resource might not be found
         print("Error: 'ml_fluids' directory not found in the package.")
