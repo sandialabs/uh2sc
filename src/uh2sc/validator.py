@@ -291,7 +291,11 @@ def validation(inp):
 
     #LOAD YAML FILE INPUT SCHEMAS
     
+    # handle both pytest install -e . and pytest install .
     schema_path = importlib.resources.files("uh2sc") / 'input_schemas'
+    if not os.path.exists(schema_path):
+        schema_path = importlib.resources.files("uh2sc") / 'src' / 'uh2sc' /'input_schemas'
+    
     #schema_path = os.path.join(os.path.dirname(__file__),"..","input_schemas")
     schemas = {}
     for filename in os.listdir(schema_path):
