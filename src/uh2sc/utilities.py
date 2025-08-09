@@ -321,14 +321,18 @@ def pickup_relevant_ml_models(model,cpfluid):
         print("Error: 'ml_fluids' directory not found in the package.")
         # You might want to raise an exception, use a default value, or take other action
         raise 
-    file_ending = ".joblib"
-    ml_models = [file for file in os.listdir(mldir) if file.endswith(file_ending)]
-    
-    for ml_model in ml_models:
-        # choose the best model if more than one exists?
-        pass
-    
+        
+    # I can't sort this out for now!
     return []
+    
+    # file_ending = ".joblib"
+    # ml_models = [file for file in os.listdir(mldir) if file.endswith(file_ending)]
+    
+    # for ml_model in ml_models:
+    #     # choose the best model if more than one exists?
+    #     pass
+    
+    # return []
     
 
 def process_CP_gas_string(matstr,backend,model):
