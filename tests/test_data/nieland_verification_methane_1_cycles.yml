@@ -1,0 +1,63 @@
+cavern:
+  depth: 914.4 # meters
+  overburden_pressure: 19829198.656747766 # Pascal:  Approximately 1000 m deep overburden pressure
+  height: 304.8 # meters
+  diameter: 25.69 # meters
+  ghe_name: nielson_ghe
+  emissivity: 0.99
+  max_operational_pressure_ratio: 1.0
+  min_operational_pressure_ratio: 0.05
+  max_volume_change_per_day: 0.2
+  max_operational_temperature: 360
+  min_operational_temperature: 290
+wells:  # an arbitrary number of wells can be defined that can pull and push different gasses into the well simultaneously
+        # each well can have multiple pipes such that a single well can inject and withdraw at the same time.
+  cavern_well:
+    ideal_pipes: true  # override everything else such that there are no energy losses along the pipes.
+    control_volume_length: 1066.8 # MUST BE THE SAME AS PIPE LENGTHS FOR THE CURRENT VERSION!
+    pipe_lengths: [1066.8] # meters must be
+    pipe_diameters: [0.0,0.0,0.1,0.12] # meters
+    pipe_thermal_conductivities: [45] # W/m/K
+    pipe_roughness_ratios: [0.000]  # ratio of pipe diameter to roughness height
+    pipe_total_minor_loss_coefficients: [0.0]
+    valves: # must have same number of valves as pipe_lengths (every pipe ends in a valve)
+      inflow_mdot:
+        type: "mdot"
+        time: [0, 10368000, 10368000.01, 31104000] # comes from "cycling_time_lists_for_yml_input.py"
+        mdot: [-1.4263930668854057, -1.4263930668854057, 0.7131965334427028, 0.7131965334427028] # comes from "cycling_time_lists_for_yml_input.py"
+        reservoir:
+          pressure: 20000000.0
+          temperature: 310.93
+          fluid: 'Methane' # Though you can make any mixture of gasses here, read CoolProp's documentation. You can get completely unrealistic results with untested arbitrary mixtures of fluid!!!
+                      # http://www.coolprop.org/fluid_properties/Mixtures.html#binary-pairs WARNING IN CoolProp:
+ghes:
+  nielson_ghe:
+    distance_to_farfield_temp: 600.0 # meters - calibration term
+    density: 2162.4925554846 # kg/m3 salt density
+    farfield_temperature: 317.5944444444444 # Kelvin 0.012 F/ft at 3,500 ft Nieland
+    heat_capacity: 837.2 #J/kg/K salt heat capacity
+    thermal_conductivity: 5.190311418685122 # W/m/K see https://doi.org/10.1016/j.renene.2021.11.080
+                                            #for examples this is for 100 C
+    modeled_radial_thickness: 50.0 # hollow cylinder thickness of salt that is modeled
+    initial_conditions:
+      Q0: 0.0
+      Qend: 0.0
+    number_elements: 100
+initial:  #
+  temperature: 318.155
+  pressure: 17249525.004323125 #Pascal
+  fluid: "Methane"
+  start_date: "2009-01-01" # Must be in iso format "YYYY-MM-DD"
+  liquid_height: 1.0 # in meters
+  liquid_temperature: 322.5 # ussually 2-4 C cooler than the gas
+  time_step: 86400
+calculation:
+  max_time_step: 86400
+  min_time_step: 1200
+  end_time: 31104000 #3456000 #
+  run_parallel: true
+  solution_tolerance: 0.00001
+heat_transfer:
+  h_inner: "calc" # can enter a constant value if needed.
+  h_cavern_brine: 100 # eventually a model is needed for this
+                      # as a function of Rayleigh number!

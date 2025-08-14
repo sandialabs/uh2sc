@@ -13,3 +13,33 @@ class MassTooLow(Exception):
 
 class InputFileError(ValueError):
     pass
+
+class NewtonSolverError(Exception):
+    pass
+
+class FluidStrBracketError(ValueError):
+    pass
+
+class FluidStrNumberError(ValueError):
+    pass
+
+class FluidStrNumbersDoNotAddToOneError(ValueError):
+    pass
+
+class FluidMixtureDoesNotExistInCoolProp(ValueError):
+    pass
+
+class FluidMixtureStateInfeasibleInCoolProp(ValueError):
+    pass
+
+class FluidMixturePresTempNotValid(ValueError):
+    pass
+
+class CavernStateOutOfOperationalBounds(ValueError):
+    pass
+
+class DeveloperError(Exception):
+    pass
+
+class FluidDoesNotExistInCoolProp(ValueError):
+    pass

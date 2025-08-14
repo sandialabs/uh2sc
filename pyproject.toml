@@ -16,7 +16,11 @@ dependencies = [
      "cerberus",
      "pandas",
      "pyyaml",
-     "rich-click"
+     "rich-click",
+     "scikit-learn",
+     "joblib",
+     "matplotlib",
+     "plotly"
 ]
 
 description = "This package simulates salt caverns with hydrogen and other gas mixtures"
@@ -34,7 +38,9 @@ test = [
   "py-pde"
 ]
 docs = [
-  "sphinx"
+  "sphinx",
+  "furo",
+  "sphinx-autodoc-typehints"
 ]
 
 [project.scripts]
@@ -64,3 +70,6 @@ disable = [
 [tool.setuptools.dynamic]
 readme = {file = ["README.md"]}
 version = {attr = "uh2sc.__init__.__version__"}
+
+[tool.setuptools.package-data]
+"uh2sc" = ["ml_fluids/*","input_schemas/*"] # Includes all files directly inside 'ml_fluids'

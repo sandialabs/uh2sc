@@ -8,38 +8,45 @@ import os
 from uh2sc.main import main
 
 
-class Test_Main(unittest.TestCase):
+class TestMain(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.run_all = True
-  
+
     @classmethod
     def tearDownClass(cls):
         pass
 
-    @unittest.skip("The Vertical Pipe Class is under construction and the current step is to add relative_roughness to the data input schema for wells.")
+    #@unittest.skip("The Vertical Pipe Class is under construction and the current"
+    #    +" step is to add relative_roughness to the data input schema for wells.")
     def test_main(self):
         if self.run_all:
-            main(os.path.join(os.path.dirname(__file__),"test_data","salt_cavern_mdot_only_test.yml"))
+            rundir= os.path.join(os.path.dirname(__file__),"test_data")
+            main(os.path.join(os.path.dirname(__file__),"test_data",
+                 "nieland_verification_h2_SHORT.yml"),
+                 output_file=os.path.join(rundir,"test_delete_me.csv"),
+                 pickle_result=True,
+                 graph_results=True,
+                 log_file=os.path.join(rundir,"main_test_delete_me_log.log"))
 
 
 
 if __name__ == "__main__":
-    profile = False
-    
-    if profile:
+    PROFILE = False
+
+    if PROFILE:
 
         pr = cProfile.Profile()
         pr.enable()
-        
-    o = unittest.main(Test_Main())
-    
-    if profile:
+
+    o = unittest.main(TestMain())
+
+    if PROFILE:
 
         pr.disable()
         s = io.StringIO()
         ps = pstats.Stats(pr, stream=s).sort_stats('tottime')
         ps.print_stats()
-        
+
         with open('main_test_profile.txt', 'w+', encoding='utf-8') as f:
-            f.write(s.getvalue())     
+            f.write(s.getvalue())

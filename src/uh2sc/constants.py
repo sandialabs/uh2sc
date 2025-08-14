@@ -15,7 +15,7 @@ class Constants:
     num_conv = {'value':1e-12,
                 'unit':'N/A',
                 'notes':'numeric convergence to near zero criterion throughout the code'}
-    K_C_offset = {'value':273.15,
+    k_c_offset = {'value':273.15,
                   'unit':'Kelvin',
                   'notes':''}
     inches_2_meters = {'value':0.0254,
@@ -29,10 +29,10 @@ class Constants:
     psi_2_pascal = {'value':6894.76,
                     'unit':'psi/Pa',
                     'notes':'psi stands for pounds per square inch'}
-    F_R_offset = {'value':458.67,
+    f_r_offset = {'value':458.67,
                   'unit':'Rankine',
                   'notes':'Offset between degrees Fahrenheit and degrees Rankine'}
-    Rankine_2_Kelvin = {'value':5/9,
+    rankine_2_kelvin = {'value':5/9,
                         'unit':"Rankine/Kelvin",
                         'notes':''}
     feet_2_meters = {'value':0.3048,
@@ -40,3 +40,14 @@ class Constants:
                      'notes':''}
     two = {'value': 2.0,
            'unit':'non-dimensional'}
+    
+    pa_2_psi = {'value': 0.000145038,
+                'unit': "Pa/psi"}
+    
+    stefan_boltzman = {'value':5.67e-8,
+                       'units': ("Watts per meter squared per Kelvin to the "
+                       +"fourth (W/m2/K4)")}
+    atmospheric_pressure = {'value':1.01325e5,
+                            'units':("Pascals"),
+                            'notes':"Eventually this can be dictated by barometric pressure"}
+    

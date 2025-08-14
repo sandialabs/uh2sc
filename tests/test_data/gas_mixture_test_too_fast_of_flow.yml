@@ -1,0 +1,57 @@
+cavern:
+  depth: 200.0 #
+  overburden_pressure: 8000000.0 # A guess based on initial pressure.
+  height: 100 # meters
+  diameter: 11.28379167 # Gives 100 m2 cross sectional area and 10,000 m3 volume
+  ghe_name: cavern_ghe
+  emissivity: 0.99
+wells:  # an arbitrary number of wells can be defined that can pull and push different gasses into the well simultaneously
+        # each well can have multiple pipes such that a single well can inject and withdraw at the same time.
+  cavern_well:
+    ideal_pipes: true  # override everything else such that there are no energy losses along the pipes.
+    control_volume_length: 250 # MUST BE THE SAME AS PIPE LENGTHS FOR THE CURRENT VERSION!
+    pipe_lengths: [250] # meters must be
+    pipe_diameters: [0.0,0.0,0.1,0.12] # meters
+    pipe_thermal_conductivities: [45] # W/m/K
+    pipe_roughness_ratios: [0.000]  # ratio of pipe diameter to roughness height
+    pipe_total_minor_loss_coefficients: [0.0]
+    valves: # must have same number of valves as pipe_lengths (every pipe ends in a valve)
+      inflow_mdot:
+        type: "mdot"
+        time: [0.0,86400]
+        mdot: [1,1]
+        reservoir:
+          pressure: 7200000
+          temperature: 320
+          fluid: 'Ethane' # Though you can make any mixture of gasses here, read CoolProp's documentation. You can get completely unrealistic results with untested arbitrary mixtures of fluid!!!
+                      # http://www.coolprop.org/fluid_properties/Mixtures.html#binary-pairs WARNING IN CoolProp:
+ghes:
+  cavern_ghe:
+    distance_to_farfield_temp: 600.0 # meters - calibration term
+    density: 2162.4925554846 # kg/m3 salt density
+    farfield_temperature: 317.5944444444444 # Kelvin
+    heat_capacity: 837.2 #J/kg/K salt heat capacity
+    thermal_conductivity: 5.190311418685122 # W/m/K see https://doi.org/10.1016/j.renene.2021.11.080
+                                            #for examples this is for 100 C
+    modeled_radial_thickness: 1000.0 # hollow cylinder thickness of salt that is modeled
+    initial_conditions:
+      Q0: 0.0
+      Qend: 0.0
+    number_elements: 100
+initial:  #
+  temperature: 313.15
+  pressure: 6000000 #Pascal
+  fluid: "Methane[0.9]&Ethane[0.1]"
+  start_date: "2023-01-01" # Must be in iso format "YYYY-MM-DD"
+  liquid_height: 1.0 # in meters
+  liquid_temperature: 320 # ussually 2-4 C cooler than the gas
+  time_step: 43200
+calculation:
+  max_time_step: 43200
+  min_time_step: 1200
+  end_time: 86400 # ends after one day
+  run_parallel: true
+heat_transfer:
+  h_inner: "calc" # can enter a constant value if needed.
+  h_cavern_brine: 100 # eventually a model is needed for this
+                      # as a function of Rayleigh number!

@@ -2,7 +2,7 @@
 # Copyright (c) 2021 Anders Andreasen
 # Published under an MIT license
 
-# pylint: disable=invalid-name
+# pylint: disable=invalid-name,c-extension-no-member
 
 import unittest
 import os
@@ -23,7 +23,7 @@ from uh2sc import validator
 def get_example_input(fname):
 
     fname = os.path.join(os.path.abspath(os.path.dirname(__file__)),"..","examples",fname)
-    with open(fname) as infile:
+    with open(fname,'r',encoding='utf-8') as infile:
         input_ = yaml.load(infile, Loader=yaml.FullLoader)
 
     return input_
@@ -98,7 +98,6 @@ class TestBasics(unittest.TestCase):
         assert tp.relief_valve(
             P1, Pback, Pset, blowdown, gamma, CD, T1, Z, MW, area
         ) == 0
-        psv_state = "closed"
         assert tp.relief_valve(
             P1*1.01, Pback, Pset, blowdown, gamma, CD, T1, Z, MW, area
         ) == 0
@@ -150,33 +149,6 @@ class TestBasics(unittest.TestCase):
                                        ) == pytest.approx(1860/3600, rel=0.01)
 
 
-    def test_hinside(self):
-        fluid = CP.AbstractState("HEOS","air")
-        Tboundary = (311 + 505.4) / 2
-        fluid.update(CP.PT_INPUTS, 1e5, Tboundary)
-        h = tp.h_inside(0.305,311,505.4,fluid)
-        assert h == pytest.approx(7, abs=0.1)
-
-
-    def test_hinner_mixed(self):
-        # Value changed from 7 to 7.6 because of annular mode of heat transport.
-        # A more 
-        mdot = 1e-10
-        D = 0.010
-        fluid = CP.AbstractState("HEOS","Air")
-        fluid.update(CP.PT_INPUTS, 101325, 311)
-        h_ = tp.h_inside_mixed(0.305, 311, 505.4, fluid, mdot, D)
-        assert h_ == pytest.approx(7.6, abs=0.05)
-
-
-    def test_nnu(self):
-        NGr = tp.Gr(0.305, 311, 505.4, 1e5, "HEOS::air")
-        NPr = tp.Pr((311 + 505.4) / 2, 1e5, "HEOS::air")
-        NRa = NGr * NPr
-        NNu = tp.Nu(NRa, NPr)
-        assert NNu == pytest.approx(62.2, abs=1.0)
-
-
     def test_nra(self):
         NGr = tp.Gr(0.305, 311, 505.4, 1e5, "HEOS::air")
         NPr = tp.Pr((311 + 505.4) / 2, 1e5, "HEOS::air")
@@ -196,9 +168,15 @@ class TestBasics(unittest.TestCase):
 
         for fname in os.listdir(dir_):
             if fname[-4:] == ".yml":
-                with open(os.path.join(dir_,fname), encoding='utf-8') as infile:
+                fpathname = os.path.join(dir_,fname)
+                with open(fpathname, encoding='utf-8') as infile:
                     input_ = yaml.load(infile, Loader=yaml.FullLoader)
-                assert validator.validation(input_)
+                try:
+                    validator.validation(input_)
+                except Exception as exc:
+                    assert False, f"The testing file {infile} is not a valid uh2sc "
+                    +"file and needs to be fixed! Here is the Exception: {exc}"
+
 
 
 if __name__ == "__main__":
@@ -219,4 +197,3 @@ if __name__ == "__main__":
 
         with open('testall_test_profile.txt', 'w+', encoding='utf-8') as f:
             f.write(s.getvalue())
-

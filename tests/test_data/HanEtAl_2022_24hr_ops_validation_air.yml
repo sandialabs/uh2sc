@@ -1,0 +1,61 @@
+cavern:
+  depth: 300.0 # THIS IS NOT KNOWN!
+  overburden_pressure: 8000000.0 # A guess based on initial pressure.
+  height: 374.316 # meters
+  diameter: 21.9 # Disregarded 20 m radius to enable having the correct volume and surface area
+  ghe_name: nieland_ghe
+  emissivity: 0.99
+  max_volume_change_per_day: 2.0
+wells:  # an arbitrary number of wells can be defined that can pull and push different gasses into the well simultaneously
+        # each well can have multiple pipes such that a single well can inject and withdraw at the same time.
+  cavern_well:
+    ideal_pipes: true  # override everything else such that there are no energy losses along the pipes.
+    control_volume_length: 450 # MUST BE THE SAME AS PIPE LENGTHS FOR THE CURRENT VERSION!
+    pipe_lengths: [450] # meters must be
+    pipe_diameters: [0.0,0.0,0.1,0.12] # meters
+    pipe_thermal_conductivities: [45] # W/m/K
+    pipe_roughness_ratios: [0.000]  # ratio of pipe diameter to roughness height
+    pipe_total_minor_loss_coefficients: [0.0]
+# important note, Han lists 190 kg/s as the outflow rate but it turns out this only happens in the second outflow. The first outflow
+# is between 140 and 150 kg/s by inspection of Fig 5a and 5b
+    valves: # must have same number of valves as pipe_lengths (every pipe ends in a valve)
+      inflow_mdot:
+        type: "mdot"
+        time: [0,3599.99,3600,9000.0,9000.01,20160,20160.01,24480,24480.01,33480,33480.01,35280,35280.01,39880,39880.01,44280,44280.01,71280,71280.01,86400]
+        mdot: [-147,-147,0.0, 0.0,   50.0,   50.0, 0.0,     0.0,  -190,    -190, 0.0,      0.0, 50.0,    50.0,0.0,0.0,50.0,50.0,0.0,0.0]
+        reservoir:
+          pressure: 7200000.0
+          temperature: 323.15
+          fluid: 'Air' # Though you can make any mixture of gasses here, read CoolProp's documentation. You can get completely unrealistic results with untested arbitrary mixtures of fluid!!!
+                      # http://www.coolprop.org/fluid_properties/Mixtures.html#binary-pairs WARNING IN CoolProp:
+ghes:
+  nieland_ghe:
+    distance_to_farfield_temp: 600.0 # meters - calibration term
+    density: 2100.0 # kg/m3 salt density
+    farfield_temperature: 313.15 # Kelvin
+    heat_capacity: 840 #J/kg/K salt heat capacity
+    thermal_conductivity: 4 # W/m/K see https://doi.org/10.1016/j.renene.2021.11.080
+                                            #for examples this is for 100 C
+    modeled_radial_thickness: 30.0 # hollow cylinder thickness of salt that is modeled
+    initial_conditions:
+      Q0: 0.0
+      Qend: 0.0
+    number_elements: 100
+initial:  #
+  temperature: 313.15
+  pressure: 5900000.0 #Pascal
+  fluid: "Air"
+  start_date: "2023-01-01" # Must be in iso format "YYYY-MM-DD"
+  liquid_height: 0.1 # brine is not needed here.
+  liquid_temperature: 313.5 # ussually 2-4 C cooler than the gas
+  time_step: 300
+calculation:
+  max_time_step: 1200 # 20 minute time steps.
+  min_time_step: 100
+  end_time: 86400 # 1 day of simulation
+  run_parallel: true
+  cool_prop_backend: "HEOS"
+  machine_learning_acceptable_percent_error: 0.1
+heat_transfer:
+  h_inner: 30.0 # can enter a constant value if needed.
+  h_cavern_brine: 0.1 # no heat interaction with the brine (very little)

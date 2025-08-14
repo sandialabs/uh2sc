@@ -1,0 +1,169 @@
+calculation:
+  allow_unknown: false
+  required: true
+  schema:
+    end_time:
+      max: 8640000000
+      min: 0.01
+      required: true
+      type: number
+    max_time_step:
+      check_with: max_time_step_check
+      max: 604800
+      min: 1
+      required: true
+      type: number
+    min_time_step:
+      check_with: min_time_step_check
+      max: 604800 # one week
+      min: 1 # one second.
+      required: true
+      type: number
+    run_parallel:
+      type: boolean
+      required: false
+    num_processors:
+      type: integer
+      required: false
+      min: -1
+      max: 100000000
+    solution_tolerance:
+      max: 0.001
+      min: 0.0000000000001
+      required: false
+      type: number
+    cool_prop_backend:
+      check_with: valid_backend_check
+      type: string
+      required: false
+    machine_learning_acceptable_percent_error:
+      type: number
+      max: 5.0
+      min: 0.00000001
+      required: false
+  type: dict
+cavern:
+  allow_unknown: false
+  required: true
+  schema:
+    depth:
+      max: 50000
+      min: 0.0
+      required: true
+      type: number
+    diameter:
+      required: true
+      type: number
+    height:
+      required: true
+      type: number
+      min: 1.0
+      max: 50000
+    overburden_pressure:
+      max: 10000000000.0
+      min: 0.0
+      required: true
+      type: number
+    emissivity:
+      max: 1.0
+      min: 0.0
+      required: true
+      type: number
+    max_operational_temperature:
+      max: 370
+      min: 300
+      required: false
+      type: number
+    min_operational_temperature:
+      max: 340
+      min: 280
+      required: false
+      type: number
+    max_operational_pressure_ratio:
+      max: 1.0
+      min: 0.1
+      required: false
+      type: number
+    min_operational_pressure_ratio:
+      max: 1.0
+      min: 0.0
+      required: false
+      type: number
+    max_volume_change_per_day:
+      max: 2.0
+      min: 0.0
+      required: false
+      type: number
+    ghe_name:
+      type: string
+      required: false #perfectly insulated if none exists.
+  type: dict
+heat_transfer:
+  allow_unknown: false
+  allowed:
+  - h_inner
+  - h_cavern_brine
+  required: false
+  schema:
+    h_inner:
+      check_with: h_inner_check
+      required: true
+      type:
+      - number
+      - string
+    h_cavern_brine:
+      required: true
+      type:
+      - number
+      min: 0.0
+      max: 3000.0
+  type: dict
+initial:
+  allow_unknown: false
+  required: true
+  schema:
+    fluid:
+      required: true
+      type: string
+      check_with: fluid_string_check
+    pressure:
+      required: true
+      type: number
+      max: 10000000000
+      min: 100000
+    start_date:
+      check_with: is_isocalendardate
+      required: false
+      type: string
+    time_step:
+      check_with: time_step_check
+      required: true
+      type: number
+      min: 1
+      max: 604800 # 1 week
+    temperature:
+      required: true
+      type: number
+      max: 380.0
+      min: 273.0
+    liquid_height:
+      required: true
+      type: number
+      max: 1.0
+      min: 0.0
+    liquid_temperature:
+      required: true
+      type: number
+      max: 380.0
+      min: 273.0
+  type: dict
+wells:
+  allow_unknown: true
+  check_with: assure_only_one_well_for_now
+  required: true
+  type: dict
+ghes:
+  allow_unknown: true
+  check_with: assure_only_one_ghe_for_now
+  required: true
+  type: dict
