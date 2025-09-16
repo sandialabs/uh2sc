@@ -215,27 +215,14 @@ Nieland, J. D., 2008. Salt cavern thermodynamics–comparison between hydrogen, 
 storage. In SMRI Fall 2008 Technical Conference Paper Galveston, Texas, USA October 13-14th.
 
 
-## How to use uh2sc
-
-**_DISCLOSURE:_** New cases are likely to be buggy and the multiple well, mulitiple pipe code is not complete
-
-```bash
-uh2sc input.yml
-```
-
+## Input files
 
 UH2SC uses a [YAML](https://yaml.org/) input file to create new scenarios. UH2SC uses [cerberus](https://docs.python-cerberus.org/) to perform input validation. The schema that shows you all of the valid inputs is in `/src/input_schemas`. The `schema_general.yml` is the highest level schema. The schemas tell you what ranges of values and types are allowed and what the names of each input entry are. More complex validation functions are also included in `/src/uh2sc/validator.py`. 
 
 
+## Python3.13 may not work
 
-
-
-
-
-
-## Python3.13 does not work
-
-uh2sc will not work with Python 3.13 because of an open issue with [CoolProp](http://www.coolprop.org/)
+uh2sc may not work with Python 3.13 because of an open issue with [CoolProp](http://www.coolprop.org/)
 
 ```python
 >>> import CoolProp
