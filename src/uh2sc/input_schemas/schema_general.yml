@@ -1,4 +1,6 @@
 calculation:
+  meta:
+    help: Dictionary of all input parameters pertaining to calculations
   allow_unknown: false
   required: true
   schema:
@@ -7,42 +9,86 @@ calculation:
       min: 0.01
       required: true
       type: number
+      meta:
+        help: End time of the simulation in seconds.
     max_time_step:
       check_with: max_time_step_check
       max: 604800
       min: 1
       required: true
       type: number
+      meta:
+        help: |
+          float: Maximum time step the simulation will take in seconds.
+            Suggested value is 1 day (i.e. 86400 seconds) two days sometimes
+            works as well.
     min_time_step:
       check_with: min_time_step_check
       max: 604800 # one week
       min: 1 # one second.
       required: true
       type: number
+      meta:
+        help: |
+          float: Minimum time step the simulation will take in seconds.
+            Suggested value is 100 seconds.
     run_parallel:
       type: boolean
       required: false
+      meta:
+        help: |
+          Optional, Default = False
+          True = Spread calculation of the Jacobian matrix rows across processors using joblib.
+            Do NOT set this to True if you are already spreading UH2SC runs across processors.
+            This setting has not been optimized and may not even speed up runs! Please test it!
+          False = Confine calculations to a single processor.
     num_processors:
       type: integer
       required: false
       min: -1
       max: 100000000
+      meta:
+        help: |
+          integer: number of processors to use if run_parallel=True. -1 uses all available processors
+            if num_processors = 0, then the program just sets it to 1. The default value 1
     solution_tolerance:
       max: 0.001
       min: 0.0000000000001
       required: false
       type: number
+      meta:
+        help: |
+          Optional, Default = 1.0e-5
+            float: Relative factor by which maximum residual must decrease for solution convergence
+            The value has a profound affect on the accuracy of the solution. Higher values will cut
+            solution time by orders of magnitude but the accuracy of the solution can become unstable.
+            A recommended maximum value of 0.01 should be respected.
     cool_prop_backend:
       check_with: valid_backend_check
       type: string
       required: false
+      meta:
+        help: |
+          Optional, Default = HEOS
+            string: Must be a valid string for CoolProp backends. If REFPROP is installed you can use it
+            REFPROP and HEOS are the only tested backends but others exist such as ["BICUBIC", "TTSE"].
+            REFPROP is required for gas mixtures with varying compositions and highly different
+            properties. Since H2 is so light HEOS is likely to fail for most H2 mixtures!
     machine_learning_acceptable_percent_error:
       type: number
       max: 5.0
       min: 0.00000001
       required: false
+      meta:
+        help: |
+          Optional, Default = 0.1
+            float: This feature has no effect and is a reserved spot for future versions of UH2SC
+            that will leverage machine learning models to simulate gas mixtures for a much faster
+            simulation than complicated equations of state.
   type: dict
 cavern:
+  meta:
+    help: Dictionary of a cylindrical cavern's input parameters
   allow_unknown: false
   required: true
   schema:
@@ -51,59 +97,127 @@ cavern:
       min: 0.0
       required: true
       type: number
+      meta:
+        help: |
+          float: The depth in meters from the surface of the earth to the top of the cavern. The
+            underlying geometry is cylindrical so the cavern top needs to be represented by the
+            average depth of the cavern top if geometry is known to be more complex.
     diameter:
       required: true
       type: number
+      min: 0.0
+      max: 5000
+      meta:
+        help: |
+          float: The diameter in meters of the cavern. The underlying geometry is cylindrical so the
+            average diameter of the cavern along its entire height is needed if geometry is known
+            to be more complex.
     height:
       required: true
       type: number
       min: 1.0
       max: 50000
+      meta:
+        help: |
+          float: The height of the cavern from its top to bottom in meters. The underlying geometry
+            is cylindrical and average height is needed if the geometry is known to be more complex
+            this height includes areas of the cavern filled with brine.
     overburden_pressure:
       max: 10000000000.0
       min: 0.0
       required: true
       type: number
+      meta:
+        help: |
+          float: The pressure in Pascal that is present in salt at the depth of the top of the cavern
+            if the cavern were not present. The user must assess the rocks and salt layers above this
+            point and estimate pressure based on geomechanics calculations.
     emissivity:
       max: 1.0
       min: 0.0
       required: true
       type: number
+      meta:
+        help: |
+          The emissivity of the salt cavern walls to the brine surface. A suggested value is 0.99.
     max_operational_temperature:
       max: 370
       min: 300
       required: false
       type: number
+      meta:
+        help: |
+          Optional, Default = 340
+            float: Maximum operational temperature in Kelvin that normal cavern operations occur at. If
+            this value is exceeded, warnings begin to be issued if it is exceeded by 10K, urgent
+            warnings are given. If it is exceeded by 20K UH2SC throws an error and stops the simulation.
     min_operational_temperature:
       max: 340
       min: 280
       required: false
       type: number
+      meta:
+        help: |
+          Optional, Default = 295
+            float: Minimum operational temperature in Kelvin that normal cavern operations occur at. If
+            operational temperature fall below this value, warnings begin to be issued if values are below
+            it by 10K, urgent warnings are given. If values are below it by 20K UH2SC throws an error and
+            stops the simulation.
     max_operational_pressure_ratio:
       max: 1.0
       min: 0.1
       required: false
       type: number
+      meta:
+        help: |
+          Optional, Default = 295
+            float: Minimum operational temperature in Kelvin that normal cavern operations occur at. If
+            operational temperature fall below this value, warnings begin to be issued if values are below
+            it by 10K, urgent warnings are given. If values are below it by 20K UH2SC throws an error and
+            stops the simulation.
     min_operational_pressure_ratio:
       max: 1.0
       min: 0.0
       required: false
       type: number
+      meta:
+        help: |
+          Optional, Default = 0.5
+            float: Minimum ratio of overburden pressure that normal operations occurs at. If pressure falls
+            to 95% of this ratio times overburden pressure major warnings are given. If it falls to 90%
+            UH2SC throws an error and stops the simulation.
     max_volume_change_per_day:
       max: 2.0
       min: 0.0
       required: false
       type: number
+      meta:
+        help: |
+          Optional, Default = 0.1
+            float: Maximum number of volume changes per day allowed to flow in or out of the cavern.
+            This is transformed into a mass flow rate in kg/s by calculating the cavern working mass
+            (equal to the difference of mass at maximum pressure and mass at minimum pressure)
+            Major warning are issued if the mass flow rate exceeds the limit by 5% and an error is
+            thrown if it exceeds it by 10% and UH2SC stops the simulation.
     ghe_name:
       type: string
-      required: false #perfectly insulated if none exists.
+      required: true
+      #check_with: ghe_name_check # this is checked for in the code!
+      meta:
+        help: |
+          string: must be the name of a GHE input dictionary in an input file
+          whose key-value pairs conform to ghe_schema.yml. Future versions of
+          UH2SC will have multiple GHE's for different caverns or GHE's at
+          different depths. For now, only 1 GHE is permitted per input deck.
   type: dict
 heat_transfer:
+  meta:
+    help: Dictionary of heat transfer coefficient values for the UH2SC simulation.
   allow_unknown: false
   allowed:
   - h_inner
   - h_cavern_brine
-  required: false
+  required: true
   schema:
     h_inner:
       check_with: h_inner_check
@@ -111,14 +225,29 @@ heat_transfer:
       type:
       - number
       - string
+      meta:
+        help: |
+          string | float: If string, the only valid value is "calc" which means that
+            UH2SC will use its inner algorithm for natural convection in a cavern to
+            calculate the wall heat transfer coeficient. If a numeric value is given
+            then the heat transfer coefficient is held constant at the numeric value.
+            Units are Watts per meter squared per Kelvin.
     h_cavern_brine:
       required: true
       type:
       - number
       min: 0.0
       max: 3000.0
+      meta:
+        help: |
+          float: The heat transfer coefficient between cavern gases and brine. A suggested
+          value of 100.0 W/m2/K for situations where heat transfer is high. If brine heat
+          dynamics are not needed, setting to a value of 0.1 is suggested. Too low a value
+          can cause convergence problems.
   type: dict
 initial:
+  meta:
+    help: Dictionary of initial conditions for UH2SC simulations.
   allow_unknown: false
   required: true
   schema:
@@ -126,44 +255,96 @@ initial:
       required: true
       type: string
       check_with: fluid_string_check
+      meta:
+        help: |
+          string: Must be a set of valid CoolProp fluid names and mass fractions delimited by
+            "&". Mass fractions must sum to 1. No mass fraction is needed if it is only a
+            single fluid. Multiple names for fluids can exist (e.g., "H2" or Hydrogen).
+            Refer to CoolProp docs for all valid gas names. Examples "H2", "H2[0.1]&Methane[0.9]"
+            , "Air", "Ethane", "CO2[0.5]&H2[0.5]". Even though tertiary systems can be defined,
+            use caution to be sure to understand if CoolProp has accurate capabilities with a given
+            gas mixture! http://www.coolprop.org/fluid_properties/Mixtures.html#binary-pairs
     pressure:
       required: true
       type: number
       max: 10000000000
       min: 100000
+      meta:
+        help: |
+          float: Initial pressure of the cavern in Pascals. Must be within the operational pressure bounds
+            prevously set with min_operational_pressure_ratio and max_operational_pressure_ratio.
     start_date:
       check_with: is_isocalendardate
       required: false
       type: string
+      meta:
+        help: |
+          string: Must be a string that specifies the start date of the UH2SC simulation.
+            Must be an ISO format datetime: 'YYYY-MM-DD' where YYYY is the four integer year,
+            MM is the two integer month code with a leading zero when needed, and DD is the two
+            integer day code with a leading zero when needed. Example: 2024-01-01
     time_step:
       check_with: time_step_check
       required: true
       type: number
       min: 1
       max: 604800 # 1 week
+      meta:
+        help: |
+          float: The initial simulation time step in seconds. Must be between min_time_step
+            and max_time_step. Also must be less than end_time. A smaller value like 3600 (1 hr)
+            helps the simulation solver to assure stability. The simulation will then
+            automatically increase the time step if the solution remains stable.
     temperature:
       required: true
       type: number
       max: 380.0
       min: 273.0
+      meta:
+        help: |
+          float: The initial temperature of the cavern in Kelvin. Must be between the maximum
+            and minimum operational temperatures. If this value is very different than the
+            ghe initial salt temperature convergence may be difficult to obtain.
     liquid_height:
       required: true
       type: number
-      max: 1.0
+      check_with: brine_height_check
+      max: 50000.0
       min: 0.0
+      meta:
+        help: |
+          float: depth of brine at the bottom of the cavern in meters. Must be less than the cavern height.
+            The simulation is not stable if this number approaches the cavern height or approaches zero
+            Future versions of UH2SC will focus on stabilizing these "completely wet" and "completely dry"
+            cases.
     liquid_temperature:
       required: true
       type: number
       max: 380.0
       min: 273.0
+      meta:
+        help: |
+          float: initial temperature of brine in Kelvin. Must be within the operational temperature limits
+          of the cavern. Values different from the initial temperature of the gases can cause stability
+          problems at the beginning of a simulation.
   type: dict
 wells:
   allow_unknown: true
   check_with: assure_only_one_well_for_now
   required: true
   type: dict
+  meta:
+    help: |
+      dict: Dictionary of well names and well dictionaries that conform to well_schema.yml. Only 1 well is allowed
+        in UH2SC. Future versions will allow multiple wells and will require the cavern dictionary
+        to have a field to select a specific name.
 ghes:
   allow_unknown: true
   check_with: assure_only_one_ghe_for_now
   required: true
   type: dict
+  meta:
+    help: |
+      dict: Dictionary of ground heat exchanger (GHE) names and GHE dictionaries that conform to ghe_schema.yml.
+      Only 1 GHE is allowed in UH2SC. Future versions will allow multiple GHEs. The cavern dictionary has to
+      call the name of this 1 GHE (unlike the well).

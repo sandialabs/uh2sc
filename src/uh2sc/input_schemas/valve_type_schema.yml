@@ -1,138 +1,200 @@
-control_valve:
-  Cv:
-    min: 0
-    required: true
-    type: number
-  characteristic:
-    allowed:
-    - linear
-    - eq
-    - fast
-    type: string
-  time_constant:
-    min: 0
-    type: number
-  type:
-    allowed:
-    - controlvalve
-    required: true
-    type: string
-  reservoir:
-    allow_unknown: false
-    required: true
-    schema:
-      pressure:
-        max: 100000000.0
-        min: 0.0
-        required: true
-        type: number
-      temperature:
-        max: 500
-        min: 0.0
-        required: true
-        type: number
-      fluid:
-        required: true
-        type: string
-        check_with: fluid_string_check
-    type: dict
+## THE COMMENTED OUT VALVES WILL HOPEFULLY BE ADDED TO UH2SC FOR FUTURE VERSIONS!
+## Legacy HydDown control_valve
+# control_valve:
+#   meta:
+#     help: |
+#       Not a valid input: Legacy HydDown has no purpose in UH2SC!
+#   Cv:
+#     min: 0
+#     required: true
+#     type: number
+#     meta:
+#       help: |
+#         Not a valid input: Legacy HydDown has no purpose in UH2SC!
+#   characteristic:
+#     allowed:
+#     - linear
+#     - eq
+#     - fast
+#     type: string
+#     meta:
+#       help: |
+#         Not a valid input: Legacy HydDown has no purpose in UH2SC!
+#   time_constant:
+#     min: 0
+#     type: number
+#     meta:
+#       help: |
+#         Not a valid input: Legacy HydDown has no purpose in UH2SC!
+#   type:
+#     allowed:
+#     - controlvalve
+#     required: true
+#     type: string
+#     meta:
+#       help: |
+#         Not a valid input: Legacy HydDown has no purpose in UH2SC!
+#   reservoir:
+#     meta:
+#       help: |
+#         Not a valid input: Legacy HydDown has no purpose in UH2SC!
+#     allow_unknown: false
+#     required: true
+#     schema:
+#       pressure:
+#       meta:
+#         help: |
+#           Not a valid input: Legacy HydDown has no purpose in UH2SC!
+#         max: 100000000.0
+#         min: 0.0
+#         required: true
+#         type: number
+#       temperature:
+#         meta:
+#           help: |
+#             Not a valid input: Legacy HydDown has no purpose in UH2SC!
+#         max: 500
+#         min: 0.0
+#         required: true
+#         type: number
+#       fluid:
+#         required: true
+#         type: string
+#         check_with: fluid_string_check
+#         meta:
+#           help: |
+#             Not a valid input: Legacy HydDown has no purpose in UH2SC!
+#     type: dict
 mdot:
   mdot:
     required: true
     type:
-    - number
     - list
+    meta:
+      help: |
+        A list of numbers that indicates the mass flow in kilograms per second for each "time."
   time:
     required: true
     type:
-    - number
     - list
+    meta:
+      help: |
+        A list of times in seconds from "start_date" that flow "mdot" is happening. Linear interpolation
+        is assumed between points and integration at time steps preserves mass from the "time" "mdot"
+        multi-linear profile.
   type:
     allowed:
     - mdot
     required: true
     type: string
+    meta:
+      help: |
+        The only valid value for the current version of UH2SC is "mdot." The rest of the options are
+        legacy from HydDown.
   reservoir:
+    meta:
+      help: |
+        Pressure, mass, and temperature reservoir dictonary with entries defined below. To change boundary
+        conditions, change this dictionary!
     allow_unknown: false
     required: true
     schema:
       pressure:
         required: true
-        type: 
+        type:
         - number
         - string
         check_with: valve_pressure_check
+        meta:
+          help: |
+            Constant reservoir pressure in Pascal. Must be greater than cavern pressure or inflow
+            to the cavern will not occur even if mdot specifies so.
       temperature:
         max: 500
         min: 0.0
         required: true
         type: number
+        meta:
+          help: |
+            Constant reservoir temperature in Kelvin.
       fluid:
         required: true
         type: string
         check_with: fluid_string_check
+        meta:
+          help: |
+            string: Reservoir fluid. Must be a set of valid CoolProp
+              fluid names and mass fractions delimited by
+              "&". Mass fractions must sum to 1. No mass fraction is needed if it is only a
+              single fluid. Multiple names for fluids can exist (e.g., "H2" or Hydrogen).
+              Refer to CoolProp docs for all valid gas names. Examples "H2", "H2[0.1]&Methane[0.9]"
+              , "Air", "Ethane", "CO2[0.5]&H2[0.5]". Even though tertiary systems can be defined,
+              use caution to be sure to understand if CoolProp has accurate capabilities with a given
+              gas mixture! http://www.coolprop.org/fluid_properties/Mixtures.html#binary-pairs
     type: dict
-orifice:
-  diameter:
-    min: 0
-    required: true
-    type: number
-  discharge_coef:
-    min: 0
-    required: true
-    type: number
-  type:
-    allowed:
-    - orifice
-    required: true
-    type: string
-  reservoir:
-    allow_unknown: false
-    required: true
-    schema:
-      pressure:
-        max: 100000000.0
-        min: 0.0
-        required: true
-        type: number
-      temperature:
-        max: 500
-        min: 0.0
-        required: true
-        type: number
-      fluid:
-        required: true
-        type: string
-        check_with: fluid_string_check
-      is_liquid:
-        type: boolean
-        required: false
-        default: false
-    type: dict
-psv:
-  back_pressure:
-    min: 0
-    required: true
-    type: number
-  blowdown:
-    max: 1
-    min: 0
-    required: true
-    type: number
-  diameter:
-    min: 0
-    required: true
-    type: number
-  discharge_coef:
-    min: 0
-    required: true
-    type: number
-  set_pressure:
-    min: 0
-    required: true
-    type: number
-  type:
-    allowed:
-    - psv
-    required: true
-    type: string
+## Legacy HydDown outflow through orifice
+# orifice:
+#   diameter:
+#     min: 0
+#     required: true
+#     type: number
+#   discharge_coef:
+#     min: 0
+#     required: true
+#     type: number
+#   type:
+#     allowed:
+#     - orifice
+#     required: true
+#     type: string
+#   reservoir:
+#     allow_unknown: false
+#     required: true
+#     schema:
+#       pressure:
+#         max: 100000000.0
+#         min: 0.0
+#         required: true
+#         type: number
+#       temperature:
+#         max: 500
+#         min: 0.0
+#         required: true
+#         type: number
+#       fluid:
+#         required: true
+#         type: string
+#         check_with: fluid_string_check
+#       is_liquid:
+#         type: boolean
+#         required: false
+#         default: false
+#     type: dict
+## Legacy HydDown pressure set valve.
+#psv:
+#  back_pressure:
+#    min: 0
+#    required: true
+#    type: number
+#  blowdown:
+#    max: 1
+#    min: 0
+#    required: true
+#    type: number
+#  diameter:
+#    min: 0
+#    required: true
+#    type: number
+#  discharge_coef:
+#    min: 0
+#    required: true
+#    type: number
+#  set_pressure:
+#    min: 0
+#    required: true
+#    type: number
+#  type:
+#    allowed:
+#    - psv
+#    required: true
+#    type: string

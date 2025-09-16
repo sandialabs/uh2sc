@@ -50,26 +50,26 @@ class Well(AbstractComponent):
         """
         CP - cool props object
         """
-        # manage convergence type 
+        # manage convergence type
         if model is None:
             self._use_relative_convergence = False
             self.residual_normalization = None
         else:
             self._use_relative_convergence = model._use_relative_convergence
-            self.residual_normalization = model.residual_normalization    
-            
+            self.residual_normalization = model.residual_normalization
+
         self._NUM_EQN = 4 + model.number_fluids
         self._gindices = global_indices
         self.input = well_dict
         self._model = model
         self._name = well_name
-        
 
-        
-        
+
+
+
         P0 = model.inputs['initial']['pressure']
         T0 = model.inputs['initial']['temperature']
-      
+
 
         if not "ideal_pipes" in well_dict:
             self.input["ideal_pipes"] = False
@@ -113,9 +113,9 @@ class Well(AbstractComponent):
         self._number_fluids = 0
         for pipe_name, pipe in pipes.items():
             self._number_fluids += pipe._number_fluids
-            
-            
-    
+
+
+
         if len(pipes) != 1:
             raise NotImplementedError("The number of pipes per well is limited to 1 for the present version of uh2sc!")
 
@@ -135,10 +135,10 @@ class Well(AbstractComponent):
                     pipe.set_adjacent_pipes(adj_inner_pipe=pipes[idx-1],adj_outer_pipe=None)
                 else:
                     pipe.set_adjacent_pipes(adj_inner_pipe=pipes[idx-1],adj_outer_pipe=pipes[idx+1])
-                    
-        
-                    
-                
+
+
+
+
     @property
     def global_indices(self):
         """
@@ -155,24 +155,24 @@ class Well(AbstractComponent):
         """
 
         return None
-            
+
 
     @property
     def next_adjacent_components(self):
         """
-        interface variable indices for the next component which can only be 
+        interface variable indices for the next component which can only be
         1 GHE for a cavern (even though this is written as a loop)
         """
         if self._model.is_test_mode:
             return self._model.test_inputs["cavern"]
         else:
             return {'cavern':self._model.components['cavern']}
-        
-        
+
+
     @property
     def component_type(self):
         """
-        A string that allows the user to identify what kind of component 
+        A string that allows the user to identify what kind of component
         this is so that specific properties and methods can be invoked
 
         """
@@ -184,9 +184,9 @@ class Well(AbstractComponent):
         Must first evaluate all interface equations for indices produced by interface_var_ind_prev_comp
 
         Then must evaluate all internal component equations
-        
+
         Equations for the salt cavern
-        
+
         Energy flow
 
 
@@ -195,8 +195,8 @@ class Well(AbstractComponent):
                              differiental/algebraic system
             get_independent_vars bool : enables collecting variables that
                              are otherwise unexposed. (NOT CURRENTLY USED)
-                             
-                
+
+
         This is a dynamic ODE implicit solution via euler integration
 
 
@@ -218,7 +218,7 @@ class Well(AbstractComponent):
         =======
             residuals - error level from solving the implicit equations
                         np.array of length number_elements + 1
-                
+
         """
         if x is not None:
             self.load_var_values_from_x(x)
@@ -228,10 +228,10 @@ class Well(AbstractComponent):
         # mass flow continuity
         for comp_name, comp in self.next_adjacent_components.items():
             for pname, pipe in self.pipes.items():
-                
+
                 # this must be the average mdot over whatever changes happen
                 # to the mass inflow during the time step. CONSERVE MASS
-                # OLD WAY THAT SETS CONSTANT - requires just right time steps for 
+                # OLD WAY THAT SETS CONSTANT - requires just right time steps for
                 # a good mass balance
                 #mdot = np.interp(self._model.time,pipe.valve['time'],pipe.valve['mdot'])
                 mdot = average_mdot_for_step(self._model, pipe)
@@ -245,7 +245,7 @@ class Well(AbstractComponent):
                         p_in = p_exit_inverted[0]
                     else:
                         p_in = pipe.valve['reservoir']['pressure']
-                        
+
                     t_exit, p_exit = pipe.initial_adiabatic_static_column(
                             t_in, p_in, mdot)
                     if p_exit[-1] < comp._p_cavern*0.99:
@@ -267,12 +267,12 @@ class Well(AbstractComponent):
                              +" than atmospheric pressure. Caverns should not"
                              +" be run at low pressure!")
                         mdot = 0
-                        
+
                 fluid.set_state(CP.AbstractState)
                 gmdots = calculate_component_masses(fluid, mdot)
                 fluid.del_state()
                 # mass balance of each gas component
-                
+
                 # factor 1000 to make mass flow match more important!
                 residuals[0:self._number_fluids] = 1000 * (pipe.mass_rates[0,:] - gmdots)
                 _eqn += self._number_fluids
@@ -281,32 +281,32 @@ class Well(AbstractComponent):
                         residuals[0:self._number_fluids]
                         /self.residual_normalization["mass_flow_norm"]
                         )
-                    
+
                 # enforce adiabatic change in pressure and temperature.
                 residuals[_eqn] = pipe.temp_fluid[-1] - t_exit[-1]
                 if self._use_relative_convergence:
                     residuals[_eqn] = residuals[_eqn]/self.residual_normalization["temperature_norm"]
                 _eqn += 1
-                
+
                 residuals[_eqn] = pipe.pres_fluid[-1] - p_exit[-1]
                 if self._use_relative_convergence:
                     residuals[_eqn] = residuals[_eqn]/self.residual_normalization["cavern_pressure"]
                 _eqn += 1
-                
+
                 residuals[_eqn] = pipe.temp_fluid[0] - t_exit[0]
                 if self._use_relative_convergence:
                     residuals[_eqn] = residuals[_eqn]/self.residual_normalization["temperature_norm"]
                 _eqn += 1
-                
+
                 residuals[_eqn] = pipe.pres_fluid[0] - p_exit[0]
                 if self._use_relative_convergence:
                     residuals[_eqn] = residuals[_eqn]/self.residual_normalization["cavern_pressure"]
-                
+
         if get_independent_vars:
             return () # nothing needed here until the well becomes more complex
-        
+
         return residuals
-    
+
     @property
     def independent_vars_descriptions(self):
         return []
@@ -316,17 +316,17 @@ class Well(AbstractComponent):
         for pname, pipe in self.pipes.items():
             for fluid_name in pipe.fluid.fluid_names():
                 e_list += [f"Well {self._name}, Pipe {pname}, {fluid_name} mass balance"]
-            
+
             e_list += [f"Well {self._name}, Pipe {pname}, exit temperature adiabatic continuity"]
             e_list += [f"Well {self._name}, Pipe {pname}, exit pressure adiabatic continuity"]
             e_list += [f"Well {self._name}, Pipe {pname}, entrance temperature adiabatic continuity"]
             e_list += [f"Well {self._name}, Pipe {pname}, entrance pressure adiabatic continuity"]
-            
-        return e_list
-            
-         
 
-    
+        return e_list
+
+
+
+
     def get_x(self):
         # THIS HAS TO BE UPDATED IF YOU IMPLEMENT CONTROL VOLUMES!!!
         x = []
@@ -348,13 +348,13 @@ class Well(AbstractComponent):
             pipe.mass_rates = np.array([xloc[0:nfl]])
             pipe.temp_fluid = np.array([xloc[nfl],xloc[nfl+2]])
             pipe.pres_fluid = np.array([xloc[nfl+1],xloc[nfl+3]])
-    
-            
-            
+
+
+
     def shift_solution(self):
         """
-        Currently nothing has to happen hear because the pipe 
-        is a purely algebraic function whose boundary conditions do 
+        Currently nothing has to happen hear because the pipe
+        is a purely algebraic function whose boundary conditions do
         not depend on the previous time step.
         """
         pass
@@ -363,8 +363,7 @@ class Well(AbstractComponent):
 
 
 class VerticalPipe(object):
-
-    """
+    r"""
     convention is position 0 is the node at the surface (i.e. connected to the valve)
     and that -1 (the last node) is the node connected to the salt cavern.
 
@@ -455,8 +454,8 @@ class VerticalPipe(object):
         Inputs
         ------
         well : uh2sc.well.Well - the well this pipe is in.
-        
-        
+
+
         fluid : fluid.FluidWithFitOption - the fluid mixture (or pure_fluid)
                 being moved through the pipe. This fluid is created at the model
                 level so that it contains every pure_fluid throughout the entire
@@ -530,7 +529,7 @@ class VerticalPipe(object):
         # here!
         self._well = well
 
-        
+
         if height_change > length:
             raise ValueError("The height change must be equal to or less than the pipe length")
 
@@ -559,8 +558,8 @@ class VerticalPipe(object):
         self.L_cv_o2 = self.L_cv / 2
         num_cv_p_1 = int(number_control_volumes + 1)
         self.num_cv = int(number_control_volumes)
-        
-        
+
+
         # more input checking
         if valve['type'] != "mdot":
             raise NotImplementedError("Only mdot valves are currently developed")
@@ -574,14 +573,14 @@ class VerticalPipe(object):
                                                        mass_rate0)
             else:
                 mass_rates = np.zeros((num_cv_p_1,self._number_fluids))
-                
-                
+
+
         self.fluid.del_state()
         # state variables
         self.temp_fluid, self.pres_fluid = self.initial_adiabatic_static_column(initial_temperature,
                                                             initial_pressure,
                                                             mass_rate0)
-        
+
 
         self.mass_rates = mass_rates * np.ones([num_cv_p_1,self._number_fluids])
 
@@ -604,8 +603,8 @@ class VerticalPipe(object):
                             * self.L_cv * self.material.kp)
         self.r_pipe_outer = np.log(self.diameters[3]/self.diameters[2])/(2.0*np.pi
                             * self.L_cv * self.material.kp)
-        
-        
+
+
 
     def _verify_adjacent_pipes_aligned(self,adj_inner_pipe,adj_outer_pipe):
         outer_aligned = True
@@ -694,7 +693,7 @@ class VerticalPipe(object):
 
         """
         self.fluid.set_state(CP.AbstractState,[initial_pressure,initial_temperature])
-        
+
         temp_fluid = np.zeros(self.num_cv+1)
         pres_fluid = np.zeros(self.num_cv+1)
 
@@ -710,7 +709,7 @@ class VerticalPipe(object):
             inflow = mass_rate0.sum() > 0
         else:
             raise ValueError("mdot must be an array or numeric!")
-            
+
         if inflow > 0:
             flow_into_cavern = True
             cv_n = 0
@@ -761,12 +760,12 @@ class VerticalPipe(object):
             fluid.update(CP.PT_INPUTS, pres_fluid[cv_n],
                                          temp_fluid[cv_n])
             rho_fluid[cv_n] = fluid.rhomass()
-            
+
             fluid.del_state()
 
             return temp_fluid,pres_fluid,rho_fluid
         else:
-            
+
             fluid.del_state()
             return temp_fluid,pres_fluid
 
@@ -775,7 +774,7 @@ class VerticalPipe(object):
     # NOT USED
     def _average_velocity(self,mdot,density):
         return mdot / density / self.area
-    
+
     # NOT USED
     def _viscous_pressue_loss(self,friction_factor,length,velocity, min_loss):
         return ((friction_factor * length / self.D_h + min_loss) * velocity ** 2

@@ -1,29 +1,65 @@
 ideal_pipes:
   required: false
   type: boolean
+  meta:
+    help: |
+      Must be true for the current version. Only ideal adiabatic vertical pipes are
+      modeled in UH2SC.
 pipe_diameters:
   check_with: is_increasinglist
   required: true
   type: list
+  meta:
+    help: |
+      Must be a list of increasing values representing pipe diameters of concentric pipes. For now, only 1 pipe is allowed
+      and the list must have a length of 4 with the two first entries equal to zero (e.g., [0,0,0.1,0.12]). In the future,
+      the first number will be inner radius of the outside of a pipe. If the well has a central pipe, this value will always
+      be zero. The second value reprents the inner radius of the outside of a concentric pipe. This value is also zero if a simple
+      circular pipe is in the concentric pipes. The third value is the outer radius of the inside of the pipe. The fourth value is
+      the outer radius of the outside of the concentric pipe. If more pipes are present, 4th value is also the inner radius of the
+      outside of the 2nd concentric pipe. Eventually UH2SC will allow an arbitrary number of concentric pipes but 2 (inner circular)
+      and 1 concentric pipe is typical for well operations.
 pipe_lengths:
   check_with: check_pipe_lengths
   required: true
   type: list
+  meta:
+    help: |
+      A list of pipe lengths in meters. Currently UH2SC can only accept 1 value. This value enables release of gases (
+      and in the future brine) at different heights in the cavern. The length of this list must be equal to the number
+      of pipes. The pipe lengths must be greater than or equal to the cavern depth and less than or equal to the cavern
+      height plus depth.
 pipe_roughness_ratios:
   check_with: check_pipe_roughness
   required: true
   type: list
+  meta:
+    help: |
+      NO AFFECT IN THE CURRENT VERSION: A list of pipe surface rougness values equal to the ratio of statistically
+      average length of roughness features divided by
+      the diameter of the pipe for the inner and outer surfaces of a pipe. Must be 1 value for a circular pipe.
+      For future versions, must be 2 values for concentric pipes following the same convention as pipe_diameters.
 pipe_thermal_conductivities:
   check_with: check_pipe_conductivities
   required: true
   type: list
+  meta:
+    help: |
+      NO AFFECT IN THE CURRENT VERSION: A list of pipe thermal conductivities with length to the number of pipes
 pipe_total_minor_loss_coefficients:
   check_with: check_pipe_minor_loss_coef
   required: false
   type: list
+  meta:
+    help: |
+      NO AFFECT IN THE CURRENT VERSION: minor loss coefficients for piping changes in diameter and turns for a well
+      must be the sum total for each pipe.
 valves:
   required: true
   type: dict
+  meta:
+    help: |
+      Dictionary of valves objects that conform to valve_schema.yml
 control_volume_length:
   required: true
   type: number
@@ -33,3 +69,7 @@ ghe_name:
   required: false # ideal flow with no lateral
                   # HT if none is present.
   type: string
+  meta:
+    help: |
+      NO AFFECT IN THE CURRENT VERSION: You must include the same GHE name as for the cavern. This has no affect though.
+      The well pipes are adiabatic and do not exchange heat with the surrounding ground.

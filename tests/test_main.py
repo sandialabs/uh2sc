@@ -5,7 +5,7 @@ import io
 import unittest
 import os
 
-from uh2sc.main import main
+from uh2sc.main import main,main_list
 
 
 class TestMain(unittest.TestCase):
@@ -24,10 +24,16 @@ class TestMain(unittest.TestCase):
             rundir= os.path.join(os.path.dirname(__file__),"test_data")
             main(os.path.join(os.path.dirname(__file__),"test_data",
                  "nieland_verification_h2_SHORT.yml"),
-                 output_file=os.path.join(rundir,"test_delete_me.csv"),
-                 pickle_result=True,
-                 graph_results=True,
-                 log_file=os.path.join(rundir,"main_test_delete_me_log.log"))
+                 os.path.join(rundir,"test_delete_me.csv"),
+                 True,
+                 True,
+                 os.path.join(rundir,"main_test_delete_me_log.log"))
+            main_list("schema_general.yml",None,None,None)
+            main_list(None,True,None,None)
+            main_list(None,None,os.path.join(rundir,"nieland_verification_h2_SHORT.yml"),None)
+            main_list("schema_general.yml",None,None,"cavern")
+            main_list("schema_general.yml",None,None,"cavern,height")
+            main_list(None,None,os.path.join(rundir,"nieland_verification_h2_SHORT.yml"),"cavern,height")
 
 
 

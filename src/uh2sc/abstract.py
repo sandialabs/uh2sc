@@ -39,7 +39,7 @@ class AbstractThermoState(ABC):
     def get_mass_fractions(self) -> List[float]:
         """Return the mass fractions of the fluid components."""
         pass
-    
+
     @abstractmethod
     def get_mole_fractions(self) -> List[float]:
         """Return the mass fractions of the fluid components."""
@@ -89,11 +89,11 @@ class AbstractThermoState(ABC):
     def cpmass(self) -> float:
         """Return specific heat capacity at constant pressure [J/kg/K]."""
         pass
-    
+
     @abstractmethod
     def cvmass(self) -> float:
         """Return specific heat capacity at constant volume [J/kg/K]."""
-        pass    
+        pass
 
     @abstractmethod
     def isobaric_expansion_coefficient(self) -> float:
@@ -143,12 +143,12 @@ class AbstractComponent(ABC):
         interface variable indices for the next component
         """
         pass
-    
+
     @property
     @abstractmethod
     def component_type(self):
         """
-        A string that allows the user to identify what kind of component 
+        A string that allows the user to identify what kind of component
         this is so that specific properties and methods can be invoked
 
         """
@@ -173,45 +173,45 @@ class AbstractComponent(ABC):
         """
         Must collect all of the local variables into an ordered list that
         will be integrated into the global variable vector.
-        
+
         """
         pass
-    
-    
+
+
     @abstractmethod
     def independent_vars_descriptions(self):
         """
-        gives a 1:1 description of each independent variable so that 
-        a user can easily find what variables mean and column names 
+        gives a 1:1 description of each independent variable so that
+        a user can easily find what variables mean and column names
         can be constructed for global output in a model.
-        
+
         You must keep this ordered list the same as what evaluate_residuals
-        returns when  get_independent_vars=True for the component being 
+        returns when  get_independent_vars=True for the component being
         modeled.
-        
+
         """
         pass
-    
+
 
     @abstractmethod
     def load_var_values_from_x(self,xg):
         """
         Values must be loaded from the global variable xg
         or else it is likely that you will NOT actually connect
-        different components. You need to pull from all variable inside 
+        different components. You need to pull from all variable inside
         this component and all variables that bridge between components from
         xg!!!
-        
+
         You may have to rederive some quantities if the original xg values do not
         directly transfer. Otherwise you risk never getting an update for the
         next time step.
         """
         pass
-    
+
     @abstractmethod
     def shift_solution(self):
         pass
-    
+
     @abstractmethod
     def equations_list(self):
         """
@@ -225,7 +225,7 @@ class AbstractComponent(ABC):
 
 
     def evaluate_jacobian(self, x=None, dx_val=1e-5):
-        
+
         num_processors = 1
         if hasattr(self,"inputs"):
             if "calculation" in self.inputs:
@@ -234,11 +234,15 @@ class AbstractComponent(ABC):
                     cpu_count = os.cpu_count()
                     if num_processors > cpu_count:
                         num_processors = cpu_count
-        
-        
+                    elif num_processors == -1:
+                        num_processors = cpu_count
+                    elif num_processors == 0:
+                        num_processors = 1
+
+
         if self._run_parallel and hasattr(self,"fluids"):
             # assure there are no active fluids with AbstractState which
-            # are not pickleable! 
+            # are not pickleable!
             for fluid_name, fluid in self.fluids.items():
                 if isinstance(fluid,dict):
                     for fluid_name_2, fluid2 in fluid.items():
@@ -247,14 +251,14 @@ class AbstractComponent(ABC):
                 else:
                     if fluid.is_active:
                         fluid.del_state()
-                
-        
+
+
         if x is None:
             x = self.get_x()
         n = len(x)
         r = self.evaluate_residuals(x)
         J = np.zeros((n, n))
-    
+
         if self._run_parallel:
             results = Parallel(n_jobs=num_processors)(
                 delayed(compute_column)(i, x, r, dx_val, self.evaluate_residuals) for i in range(n)
@@ -268,7 +272,7 @@ class AbstractComponent(ABC):
                 xdx = x + dx
                 dfdx = (self.evaluate_residuals(xdx) - r) / dx_val
                 J[:, i] = dfdx
-    
+
         return csr_matrix(J)
 
 
@@ -277,32 +281,30 @@ class AbstractComponent(ABC):
     #     # must do this numerically and we follow the same routine
     #     if False:
     #         # TODO: look into impelmenting an efficient sparse
-    #         # Jacobian or even implementing a sparse Jacobian 
+    #         # Jacobian or even implementing a sparse Jacobian
     #         # algorithm in Cython.
     #         if x is None:
     #             x = self.get_x()
-                
+
     #         def compute_jacobian(func,x):
     #             return jax.jacfwd(func)(x)
-            
-            
+
+
     #         J = compute_jacobian(self.evaluate_residuals,x)
     #         return csr_matrix(J)
     #     else:
     #         if x is None:
     #             x = self.get_x()
     #         J = np.zeros((len(x),len(x)))
-            
+
     #         r = self.evaluate_residuals(x)
-            
+
     #         for idx in range(len(x)):
     #             dx = np.zeros(len(x))
     #             dx[idx] = 0.00001
     #             xdx = x + dx
     #             dfdx = (self.evaluate_residuals(xdx) - r)/0.00001
-            
+
     #             J[:,idx] = dfdx
-                
+
     #         return csr_matrix(J)
-            
-                

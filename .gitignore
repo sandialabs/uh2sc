@@ -82,3 +82,7 @@ tests/test_data/uh2sc.log
 tests/test_data/uh2sc_results.csv
 tests/test_mdot_accuracy.log
 uh2sc_results.csv
+src/uh2sc/uh2sc.log
+tests/nieland_verification_h2_SHORT.pickle
+tests/test_data/test_delete_me.csv
+uh2sc.log

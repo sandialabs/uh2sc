@@ -189,15 +189,20 @@ def validation(inp):
                           "Permissible entries for CoolProps are:\n\n"+
                           str(allowed_gas_species))
 
+    def brine_height_check(field,value,error):
+        if value >= inp["cavern"]["height"]:
+            error(field, "The brine liquid height must be less than the cavern height!")
+        elif value <= 0.0:
+            error(field, "The brine liquid height must be greater than zero!")
 
     def time_step_check(field,value,error):
         end_time = inp['calculation']["end_time"]
         max_time_step = inp['calculation']['max_time_step']
         min_time_step = inp['calculation']['min_time_step']
-        
+
         if value > max_time_step:
             error(field, "The initial time_step cannot be greater than the max_time_step!")
-            
+
         if value < min_time_step:
             error(field, "The initial time_step cannot be less than the min_time_step")
 
@@ -214,8 +219,8 @@ def validation(inp):
 
         if end_time < value:
             error(field, "The max_time_step cannot be greater than the end time!")
-            
-            
+
+
     def min_time_step_check(field,value,error):
         end_time = inp['calculation']["end_time"]
         max_time_step = inp['calculation']['max_time_step']
@@ -226,9 +231,9 @@ def validation(inp):
 
         if max_time_step < min_time_step:
             error(field, "The min_time_step cannot be greater than the max_time_step")
-            
+
     def valid_backend_check(field,value,error):
-        
+
         known_valid_backends = [
              'HEOS',
              'BICUBIC',
@@ -248,19 +253,20 @@ def validation(inp):
         num_well = 0
         for well_name, well in value.items():
             num_well += 1
-            
+
         if num_well > 1:
             error(field, "UH2SC does not currently handle more than one well. "
                   +f"You must only simulate one well! you have entered:\n\n {value}\n\n")
-            
+
     def assure_only_one_ghe_for_now(field,value,error):
         num_ghe = 0
         for ghe_name, ghe in value.items():
             num_ghe += 1
-            
+
         if num_ghe > 1:
             error(field, "UH2SC does not currently handle more than one ghe. "
                   +f"You must only simulate one ghe! you have entered:\n\n {value}\n\n")
+
 
     # you must make a new entry if you put a new name for check_with in
     # the YAML schemas
@@ -278,7 +284,8 @@ def validation(inp):
                   "valve_pressure_check":valve_pressure_check,
                   "valid_backend_check":valid_backend_check,
                   "assure_only_one_well_for_now":assure_only_one_well_for_now,
-                  "assure_only_one_ghe_for_now":assure_only_one_ghe_for_now}
+                  "assure_only_one_ghe_for_now":assure_only_one_ghe_for_now,
+                  "brine_height_check":brine_height_check}
 
     def _add_check_with_functions(schema,dispatcher):
         # recursive function
@@ -290,12 +297,12 @@ def validation(inp):
                     _add_check_with_functions(val,dispatcher)
 
     #LOAD YAML FILE INPUT SCHEMAS
-    
+
     # handle both pytest install -e . and pytest install .
     schema_path = importlib.resources.files("uh2sc") / 'input_schemas'
     if not os.path.exists(schema_path):
         schema_path = importlib.resources.files("uh2sc") / 'src' / 'uh2sc' /'input_schemas'
-    
+
     #schema_path = os.path.join(os.path.dirname(__file__),"..","input_schemas")
     schemas = {}
     for filename in os.listdir(schema_path):
@@ -307,7 +314,7 @@ def validation(inp):
 
     validate_dict = {}
     retval = {}
-    
+
     validate_dict['main input'] = Validator(schemas["schema_general"])
     retval['main input'] = validate_dict['main input'].validate(inp)
 
@@ -334,12 +341,21 @@ def validation(inp):
                     "Every pipe must have one valve. The first valve goes to"+
                     " the first pipe...etc..",False)
 
+        if len(well["valves"]) != 1:
+            nvnp1 = name +"_only_1_pipe"
+            validate_dict[nvnp1] = _LocalErrorObj()
+            retval[nvnp1] = validate_dict[nvnp1].validate(
+                 nvnp1,
+                 "Only 1 pipe is allowed in the current version of UH2SC!",
+                 False
+            )
+
 
 
         # now loop over the valves (1 valve for every pipe)
         for vname,valve in well["valves"].items():
 
-            nvn = name+"_"+vname
+            nvn = name +"_"+vname
 
             # 3. verify that any mdot valves have time arrays that are valid input
             if valve["type"] == "mdot":
@@ -354,11 +370,17 @@ def validation(inp):
                                " the end time of the simulation! (i.e. "+
                                "calculation:end_time > wells:"+name+":"+vname+
                                ")",False)
+            else:
+                # bv = bad valve type!
+                nvnbv = name+"_only_mdot_allowed"
+                validate_dict[nvnbv] = _LocalErrorObj()
+                retval[nvnbv] = validate_dict[nvnbv].validate(
+                    nvnbv,
+                    "Only mdot valve type is allowed in the current version of UH2SC!",
+                    False
+                )
 
-            validate_dict[nvn] = Validator(schemas["valve_schema"])
             if isinstance(valve,dict):
-                # validate valve in general
-                retval[nvn] = validate_dict[nvn].validate(valve)
                 # validate specific valve type
                 vtype = valve["type"]
                 type_id = nvn+"_"+vtype

@@ -3,42 +3,80 @@ distance_to_farfield_temp:
   min: 0.0
   required: true
   type: number
+  meta:
+    help: |
+      The linear distance in meters (not radial distance) to farfield temperature where the heat
+      ground heat exchanger (GHE) can lose or gain heat permanently from. The distance determines
+       a linear heat resistance to heat flow to this reservoir.
 density:
   max: 10000
   min: 1
   required: true
   type: number
+  meta:
+    help: |
+      The density in kilograms per meter cubed of salt surrounding the cylindrical cavern on all sides.
+      This must be the average density over the height of the cavern since variation with depth is not
+      represented.
 farfield_temperature:
   max: 2000.0
   min: 273
   required: true
   type: number
+  meta:
+    help: |
+      The constant temperature in Kelvin far away from the salt cavern to which heat can be
+      lost or can be gained.
 heat_capacity:
   max: 10000
   min: 1
   required: true
   type: number
+  meta:
+    help: |
+      The average heat capacity of salt along the height of the cavern in Joules per kilogram per Kelvin.
 thermal_conductivity:
   max: 2200
   min: 0.02
   required: true
   type: number
+  meta:
+    help: |
+      The average thermal conductivity of salt along the height of the cavern in Watts per meter per Kelvin.
 modeled_radial_thickness:
   min: 0.0
   required: true
   type: number
+  meta:
+    help: |
+      The radial distance in meters to constant heat flux = Qend. UH2SC assumes that the cavern is surrounded by lots
+      of other salt caverns with the exact same operations occurring. This distance should be the radius of the
+      cavern plus the amount of additional radial distance needed to account for all geologic material for any
+      surrounding caverns. If there are not surrounding caverns, then this value should be large enough to assure
+      the zero flux condition will not have a singificant effect. The surrounding rock should have 100,000's of times
+      more heat capacity than the gases involved. Making this value large will increase the number of elements needed
+      to accurate model the cavern heat dynamics.
 initial_conditions:
+  meta:
+    help: Dictionary of ground heat exchanger initial conditions.
   allow_unknown: false
   required: true
   schema:
     Q0:
+      meta:
+        help: |
+          Initial heat flux at the cavern-ground heat exchanger interface
       max: 50000000000000.0
       min: -50000000000000.0
       required: true
       type: number
     Qend:
+      meta:
+        help: |
+          Permanent boundary condition constant heat flux in Watts at outer edge of the ground heat exchanger.
+           It is advised to set Qend = 0.
       max: 50000000000000.0
-      max: 50000000000000.0
+      min: -50000000000000.0
       required: true
       type: number
   type: dict
@@ -47,13 +85,31 @@ number_elements:
   max: 100000
   required: true
   type: integer
+  meta:
+    help: |
+      The number of axi-symmetric control volumes spanning across modeled_radial_thickness
+      that will be included in the ground heat exchanger.
+      Control volume boundaries are spaced logarithmically with the smallest elements being at the
+      cavern-gas interface. Depending on the application, it is advised
+      that 50 to several hundred elements be used. The model performance becomes inaccurate
+      for verification cases when too few elements are used. Too many elements slow down calculations though.
+      If a new cavern is being run, a convergence study is advised to assure sufficient numbers of elements are
+      being used.
 height:
   min: 0.001
   max: 30000
   required: false
   type: number
+  meta:
+    help: |
+      The height of the ground heat exchanger in meters. Usually this should be the cavern height but a
+      different value can be used to account for rock outside the well and below the cavern.
 inner_radius:
   min: 0.001
   max: 30000
   required: false
   type: number
+  meta:
+    help: |
+      The inner radius in meters of the ground heat exchanger, Usually should be the cavern radius but a
+      different value can be used for calibration purposes if need be.

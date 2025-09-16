@@ -269,6 +269,18 @@ class Model(AbstractComponent):
         inp : str or dict : str = filepath to a yaml file that conforms to the
                                   uh2sc schema or:
                             dict = dict that conforms to the uh2sc schema
+        
+        single_component_test : bool (Default = False):
+           Is for internal testing only. This gives the capacity to run 
+           a model as a single component.
+
+        solver_options : dict : Default = None,
+           Provides a mechanism for changing solver options for the NewtonSolver
+           class. See the "options" parameter for NewtonSolver.
+
+        get_independent_vars : bool : Default = True
+           Makes UH2SC also output independent variables such as pressure, evaporation rates, etc. Otherwise
+           only the state variables (mass, mass_flow, temperature, heat flow) are output.
 
         """
         self.is_single_component_test = single_component_test
@@ -294,7 +306,7 @@ class Model(AbstractComponent):
             
             if not self.inputs["calculation"]["run_parallel"]:
                 self.logging.warning("This simulation is running in serial which"
-                    +" is may be slower than running in parallel and usually should be"
+                    +" may be slower than running in parallel and usually should be"
                     +" confined to debugging! Ignore this message if you are"
                     +" running lots of uh2sc runs in parallel. uh2sc will fail if you set"
                     +" input['calculations']['run_parallel']=True in the input file"
