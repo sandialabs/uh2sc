@@ -140,7 +140,10 @@ def main_list(schema, available,inputfile,inputnames):
                         else:
                             if num_keys > 1:
                                 if inputfile is None:
-                                    rec = uh2sc_inp[keys[0]]["schema"]
+                                    if "schema" in uh2sc_inp[keys[0]]:
+                                        rec = uh2sc_inp[keys[0]]["schema"]
+                                    else:
+                                        rec = uh2sc_inp[keys[0]]
                                 else:
                                     rec = uh2sc_inp[keys[0]]
                             else:
@@ -159,7 +162,10 @@ def main_list(schema, available,inputfile,inputnames):
                             else:
                                 if num_keys > num_deep:
                                     if inputfile is None:
-                                        rec = rec[key]["schema"]
+                                        if "schema" in rec[key]:
+                                            rec = rec[key]["schema"]
+                                        else:
+                                            rec = rec[key]
                                     else:
                                         rec = rec[key]
                                 else:
@@ -177,16 +183,30 @@ def main_list(schema, available,inputfile,inputnames):
         except yaml.YAMLError as err:
             print(f"[red]Error parsing {ftype} file[/red] {sfpath}: {err}")
             return
+        except KeyError:
+            print(f"[red]Error the requested key structure is incorrect")
+            return
 
 
 
 @click.group()
 def cli():
-    """HydDown hydrogen/other gas program."""
+    """Underground Hydrogen Salt Cavern (UH2SC): This program executes a control volume
+with gas mixtures (not limited to hydrogen!) and a brine control volume and radial symetric heat away
+from a salt cavern. It models boundary conditions as flow at constant pressure and temperature through
+a vertical adiabatic pipe to the cavern. Navigate how to create a valid input file using the 'list' command.
+Example input files are in tests/test_data/*.yml. Author=dlvilla@sandia.gov, License=Open Source Revised BSD
+
+Sandia National Laboratories is a multimission laboratory managed and operated by National Technology and Engineering
+Solutions of Sandia, LLC., a wholly owned subsidiary of Honeywell International, Inc., for the U.S. Department of Energy's
+National Nuclear Security Administration under contract DE-NA-0003525.
+
+Creation of UH2SC was funded by an Inter-Agency Agreement between the United States Department of Energy Office of Fossil
+Energy and Carbon Management and the Pipeline and Hazardous Materials Safety Administration."""
     # Nothing needed here; click uses this as a group entrypoint.
 
 
-@click.command(help="Run the HydDown simulation.")
+@click.command(help="Run a UH2SC simulation with an input file specified.")
 @click.option(
     "-i", "--input-file",
     default="input.yml",
@@ -216,7 +236,7 @@ def cli():
     help="Path to the logging output file."
 )
 def run(input_file, output_file, pickle_result, graph_results, log_file):
-    """Run the HydDown hydrogen/other gas program."""
+    """Run UH2SC hydrogen/other gas program."""
     main(input_file, output_file, pickle_result, graph_results, log_file)
 
 
