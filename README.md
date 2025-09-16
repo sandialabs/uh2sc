@@ -217,7 +217,7 @@ storage. In SMRI Fall 2008 Technical Conference Paper Galveston, Texas, USA Octo
 
 ## Input files
 
-UH2SC uses a [YAML](https://yaml.org/) input file to create new scenarios. UH2SC uses [cerberus](https://docs.python-cerberus.org/) to perform input validation. The schema that shows you all of the valid inputs is in `/src/input_schemas`. The `schema_general.yml` is the highest level schema. The schemas tell you what ranges of values and types are allowed and what the names of each input entry are. More complex validation functions are also included in `/src/uh2sc/validator.py`. 
+UH2SC uses a [YAML](https://yaml.org/) input file to create new scenarios. UH2SC uses [cerberus](https://docs.python-cerberus.org/) to perform input validation. The schema that shows you all of the valid inputs is in `/src/uh2sc/input_schemas`. The `schema_general.yml` is the highest level schema. The schemas tell you what ranges of values and types are allowed and what the names of each input entry are. More complex validation functions are also included in `/src/uh2sc/validator.py`. 
 
 
 ## Python3.13 may not work
