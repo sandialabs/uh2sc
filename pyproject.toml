@@ -26,9 +26,9 @@ dependencies = [
 description = "This package simulates salt caverns with hydrogen and other gas mixtures"
 readme = "README.md"
 requires-python = ">3.8"
+license = "BSD-3-Clause"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: BSD 3-Clause",
     "Operating System :: OS Independent",
 ]
 [project.optional-dependencies]
