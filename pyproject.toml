@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "uh2sc"
-version = "0.0.0"
+version = "1.0.0"
 authors = [
   { name="Daniel L. Villa", email="dlvilla@sandia.gov" },
 ]
